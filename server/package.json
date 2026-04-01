@@ -1,0 +1,22 @@
+{
+  "name": "chores-server",
+  "version": "1.0.0",
+  "description": "Backend API for Moody Family Chore App",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx prisma migrate deploy && node index.js",
+    "dev": "npx prisma migrate dev && nodemon index.js",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "prisma": "^5.10.2"
+  }
+}

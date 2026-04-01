@@ -1,0 +1,42 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id     String  @id @default(uuid())
+  name   String
+  role   String  @default("child")
+  chores Chore[]
+}
+
+model ChoreTemplate {
+  id        String @id @default(uuid())
+  title     String
+  baseValue Float
+}
+
+model Chore {
+  id            String   @id @default(uuid())
+  title         String
+  baseValue     Float
+  templateId    String?
+  assignedTo    String
+  completedDays String[]
+  isApproved    Boolean  @default(false)
+  isArchived    Boolean  @default(false)
+  user          User     @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
+}
+
+model PayoutRecord {
+  id         String   @id @default(uuid())
+  childId    String
+  childName  String
+  amount     Float
+  timestamp  DateTime @default(now())
+  choresPaid String[]
+}
