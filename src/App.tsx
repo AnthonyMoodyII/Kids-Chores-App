@@ -38,7 +38,7 @@ export interface PayoutRecord {
 
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3000');
 const PARENT_SESSION_KEY = 'chore_parent_auth_v1';
 const DEFAULT_PARENT_USERNAME = 'parent';
 const DEFAULT_PARENT_PASSWORD = 'changeme';
