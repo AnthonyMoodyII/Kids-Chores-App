@@ -41,9 +41,6 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const PARENT_SESSION_KEY = 'chore_parent_auth_v1';
 
-const PARENT_USERNAME = import.meta.env.VITE_PARENT_USERNAME as string;
-const PARENT_PASSWORD = import.meta.env.VITE_PARENT_PASSWORD as string;
-
 function readParentSession(): boolean {
   try {
     return sessionStorage.getItem(PARENT_SESSION_KEY) === '1';
@@ -81,19 +78,29 @@ const btnPress =
 const cardSurface =
   'rounded-[1.75rem] border border-white/60 bg-white/80 shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm';
 
-function ParentLoginForm({ onSuccess }: { onSuccess: () => void }) {
+function ParentLoginForm({ onSuccess }: { onSuccess: (hasChanged: boolean) => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (username === PARENT_USERNAME && password === PARENT_PASSWORD) {
-      writeParentSession(true);
-      onSuccess();
-    } else {
-      setError('Invalid username or password.');
+    try {
+      const response = await fetch(`${API_URL}/api/parent/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        writeParentSession(true);
+        onSuccess(result.hasChanged);
+      } else {
+        setError('Invalid username or password.');
+      }
+    } catch {
+      setError('Login failed.');
     }
   };
 
@@ -143,10 +150,104 @@ function ParentLoginForm({ onSuccess }: { onSuccess: () => void }) {
         </button>
       </form>
       <p className="mt-6 text-center text-xs text-slate-400">
-        Set <code className="rounded bg-slate-100 px-1">VITE_PARENT_USERNAME</code> and{' '}
-        <code className="rounded bg-slate-100 px-1">VITE_PARENT_PASSWORD</code> in{' '}
-        <code className="rounded bg-slate-100 px-1">.env</code> for production.
+        Default credentials: username <code className="rounded bg-slate-100 px-1">{import.meta.env.VITE_PARENT_USERNAME || 'parent'}</code>, password <code className="rounded bg-slate-100 px-1">{import.meta.env.VITE_PARENT_PASSWORD || 'changeme'}</code>
       </p>
+    </div>
+  );
+}
+
+function ChangePasswordForm({ onSuccess }: { onSuccess: () => void }) {
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!newUsername.trim() || !newPassword.trim()) {
+      setError('Username and password are required.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_URL}/api/parent/set`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: newUsername.trim(), password: newPassword }),
+      });
+      const result = await response.json();
+      if (result.success) {
+        onSuccess();
+      } else {
+        setError('Failed to update credentials.');
+      }
+    } catch {
+      setError('Update failed.');
+    }
+  };
+
+  return (
+    <div className={`${cardSurface} mx-auto max-w-md p-8 md:p-10`}>
+      <div className="mb-8 flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+          <ShieldCheck size={24} />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-black">Set New Credentials</h2>
+          <p className="text-sm text-slate-500">Change your parent login details</p>
+        </div>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label htmlFor="new-parent-user" className="mb-1.5 block text-xs font-black uppercase tracking-widest text-slate-400">
+            New Username
+          </label>
+          <input
+            id="new-parent-user"
+            autoComplete="username"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+            value={newUsername}
+            onChange={e => setNewUsername(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="new-parent-pass" className="mb-1.5 block text-xs font-black uppercase tracking-widest text-slate-400">
+            New Password
+          </label>
+          <input
+            id="new-parent-pass"
+            type="password"
+            autoComplete="new-password"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="confirm-parent-pass" className="mb-1.5 block text-xs font-black uppercase tracking-widest text-slate-400">
+            Confirm Password
+          </label>
+          <input
+            id="confirm-parent-pass"
+            type="password"
+            autoComplete="new-password"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+          />
+        </div>
+        {error ? <p className="text-sm font-bold text-red-600">{error}</p> : null}
+        <button
+          type="submit"
+          className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-4 font-black uppercase tracking-wide text-white shadow-xl shadow-violet-500/30`}
+        >
+          Save New Credentials
+        </button>
+      </form>
     </div>
   );
 }
@@ -633,6 +734,7 @@ export default function ChoreApp() {
   const [activeKidId, setActiveKidId] = useState<string>(kids[0]?.id || '');
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
   const [showModal, setShowModal] = useState({ show: false, milestone: false, title: '' });
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [kidsImageBroken, setKidsImageBroken] = useState(false);
 
   useEffect(() => {
@@ -800,6 +902,12 @@ export default function ChoreApp() {
         </div>
       )}
 
+      {showChangePassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
+          <ChangePasswordForm onSuccess={() => setShowChangePassword(false)} />
+        </div>
+      )}
+
       <div className="mx-auto max-w-6xl">
         <header className="mb-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="text-left">
@@ -895,7 +1003,7 @@ export default function ChoreApp() {
                 ← Back to kids
               </button>
             </div>
-            <ParentLoginForm onSuccess={() => setParentAuthed(true)} />
+            <ParentLoginForm onSuccess={(hasChanged) => { setParentAuthed(true); if (!hasChanged) setShowChangePassword(true); }} />
           </div>
         ) : view === 'parent' ? (
           <div className="space-y-8">

@@ -40,3 +40,10 @@ model PayoutRecord {
   timestamp  DateTime @default(now())
   choresPaid String[]
 }
+
+model Parent {
+  id         String @id @default(uuid())
+  username   String @unique
+  password   String
+  hasChanged Boolean @default(false)
+}

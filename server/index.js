@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -9,6 +10,24 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+// Initialize parent credentials if not exist
+async function initParent() {
+  const existing = await prisma.parent.findFirst();
+  if (!existing) {
+    const hashedPassword = await bcrypt.hash(process.env.PARENT_PASSWORD, 10);
+    await prisma.parent.create({
+      data: {
+        username: process.env.PARENT_USERNAME,
+        password: hashedPassword,
+        hasChanged: false
+      }
+    });
+    console.log('Parent credentials initialized');
+  }
+}
+
+initParent().catch(console.error);
 
 // --- Kids Endpoints ---
 
@@ -219,6 +238,42 @@ app.post('/api/payouts/:kidId', async (req, res) => {
 
   const updatedChores = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json({ payout, updatedChores });
+});
+
+// --- Parent Endpoints ---
+
+// Login
+app.post('/api/parent/login', async (req, res) => {
+  const { username, password } = req.body;
+  const parent = await prisma.parent.findUnique({ where: { username } });
+  if (!parent) return res.json({ success: false });
+  const isValid = await bcrypt.compare(password, parent.password);
+  res.json({ success: isValid, hasChanged: parent.hasChanged });
+});
+
+// Get current parent (for checking if set)
+app.get('/api/parent', async (req, res) => {
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent set' });
+  res.json({ username: parent.username });
+});
+
+// Set new credentials
+app.post('/api/parent/set', async (req, res) => {
+  const { username, password } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const parent = await prisma.parent.findFirst();
+  if (parent) {
+    await prisma.parent.update({
+      where: { id: parent.id },
+      data: { username, password: hashedPassword, hasChanged: true }
+    });
+  } else {
+    await prisma.parent.create({
+      data: { username, password: hashedPassword, hasChanged: true }
+    });
+  }
+  res.json({ success: true });
 });
 
 app.listen(PORT, () => {
