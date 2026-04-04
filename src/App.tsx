@@ -41,8 +41,8 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const PARENT_SESSION_KEY = 'chore_parent_auth_v1';
 
-const PARENT_USERNAME = (import.meta.env.VITE_PARENT_USERNAME as string | undefined) ?? 'parent';
-const PARENT_PASSWORD = (import.meta.env.VITE_PARENT_PASSWORD as string | undefined) ?? 'changeme';
+const PARENT_USERNAME = import.meta.env.VITE_PARENT_USERNAME as string;
+const PARENT_PASSWORD = import.meta.env.VITE_PARENT_PASSWORD as string;
 
 function readParentSession(): boolean {
   try {
