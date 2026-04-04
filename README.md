@@ -1,6 +1,5 @@
-This README.md provides a comprehensive overview of the Moody Family Chore App, reflecting its transition from a local-storage prototype to a professional full-stack application.
-
 Moody Family Chore App
+
 The Moody Family Chore App is a full-stack, gamified task management system built to help parents track household contributions and automate reward calculations. It replaces manual checklists with a persistent, database-driven dashboard that enforces specific earning logic based on weekly consistency.
 
 🚀 Core Features
