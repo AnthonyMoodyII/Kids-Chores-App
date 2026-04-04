@@ -40,6 +40,8 @@ const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const PARENT_SESSION_KEY = 'chore_parent_auth_v1';
+const DEFAULT_PARENT_USERNAME = 'parent';
+const DEFAULT_PARENT_PASSWORD = 'changeme';
 
 function readParentSession(): boolean {
   try {
@@ -150,7 +152,7 @@ function ParentLoginForm({ onSuccess }: { onSuccess: (hasChanged: boolean) => vo
         </button>
       </form>
       <p className="mt-6 text-center text-xs text-slate-400">
-        Default credentials: username <code className="rounded bg-slate-100 px-1">{import.meta.env.VITE_PARENT_USERNAME || 'parent'}</code>, password <code className="rounded bg-slate-100 px-1">{import.meta.env.VITE_PARENT_PASSWORD || 'changeme'}</code>
+        Default credentials: username <code className="rounded bg-slate-100 px-1">{DEFAULT_PARENT_USERNAME}</code>, password <code className="rounded bg-slate-100 px-1">{DEFAULT_PARENT_PASSWORD}</code>
       </p>
     </div>
   );

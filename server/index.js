@@ -11,14 +11,19 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+const DEFAULT_PARENT_USERNAME = 'parent';
+const DEFAULT_PARENT_PASSWORD = 'changeme';
+
 // Initialize parent credentials if not exist
 async function initParent() {
   const existing = await prisma.parent.findFirst();
   if (!existing) {
-    const hashedPassword = await bcrypt.hash(process.env.PARENT_PASSWORD, 10);
+    const initialUsername = process.env.PARENT_USERNAME || DEFAULT_PARENT_USERNAME;
+    const initialPassword = process.env.PARENT_PASSWORD || DEFAULT_PARENT_PASSWORD;
+    const hashedPassword = await bcrypt.hash(initialPassword, 10);
     await prisma.parent.create({
       data: {
-        username: process.env.PARENT_USERNAME,
+        username: initialUsername,
         password: hashedPassword,
         hasChanged: false
       }
