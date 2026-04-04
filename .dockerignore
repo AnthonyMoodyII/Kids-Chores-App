@@ -1,0 +1,10 @@
+node_modules
+.git
+dist
+.DS_Store
+.env
+.sixth/
+README.md
+*.log
+.vscode/
+.idea/

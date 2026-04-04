@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:15-alpine
@@ -16,6 +18,7 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    image: moodyplex/chores-app-backend:latest
     container_name: chorehero_api
     restart: always
     ports:
@@ -30,6 +33,7 @@ services:
 
   frontend:
     build: .
+    image: moodyplex/chores-app-frontend:latest
     container_name: chorehero_ui
     ports:
       - "8080:80"
