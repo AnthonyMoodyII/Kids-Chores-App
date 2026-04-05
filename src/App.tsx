@@ -775,6 +775,29 @@ export default function ChoreApp() {
       .sort((a, b) => b.approved - a.approved);
   }, [kids, chores]);
 
+  const topEarner = useMemo(() => {
+    const totals = payouts.reduce<Record<string, number>>((acc, payout) => {
+      acc[payout.childId] = (acc[payout.childId] || 0) + payout.amount;
+      return acc;
+    }, {});
+
+    let winnerId: string | null = null;
+    let winnerTotal = 0;
+
+    kids.forEach(kid => {
+      const total = totals[kid.id] ?? 0;
+      if (total > winnerTotal) {
+        winnerTotal = total;
+        winnerId = kid.id;
+      }
+    });
+
+    return {
+      name: winnerId ? kids.find(k => k.id === winnerId)?.name || '—' : '—',
+      amount: winnerTotal,
+    };
+  }, [kids, payouts]);
+
   const handleToggleDay = async (choreId: string, day: DayOfWeek) => {
     try {
       const response = await fetch(`${API_URL}/api/chores/${choreId}/toggle`, {
@@ -1056,7 +1079,7 @@ export default function ChoreApp() {
                   <StatCard
                     icon={<Trophy />}
                     label="Top earner"
-                    val={leaderboard[0]?.name || '—'}
+                    val={topEarner.name}
                     accent="from-violet-500 to-indigo-600"
                   />
                 </div>
