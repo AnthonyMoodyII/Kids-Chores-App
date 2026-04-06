@@ -1291,8 +1291,12 @@ export default function ChoreApp() {
                               className={`text-xl font-bold ${isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
                                 }`}
                             >
-                              {chore.title}
+                              {chore.title} <span className="text-sm font-medium text-slate-400">(${chore.baseValue.toFixed(2)})</span>
                             </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                              <span>Value: ${chore.baseValue.toFixed(2)}</span>
+                              <span>Current: ${earned.toFixed(2)}</span>
+                            </div>
                             <div className="mt-2 flex gap-1">
                               {[...Array(7)].map((_, i) => (
                                 <div
