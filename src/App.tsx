@@ -558,7 +558,7 @@ const ManageTab = ({
           {kids.map(kid => (
             <div
               key={kid.id}
-              className="group flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 transition-colors hover:border-violet-200"
+              className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-violet-300"
             >
               <span className="font-bold text-slate-800">{kid.name}</span>
               <button
@@ -617,7 +617,7 @@ const ManageTab = ({
                 key={t.id}
                 className={`flex cursor-pointer items-center justify-between gap-2 rounded-2xl border px-4 py-3 transition-all ${selectedTemplateId === t.id
                   ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-300/50'
-                  : 'border-slate-100 bg-white hover:border-slate-200'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 onClick={() => setSelectedTemplateId(t.id)}
               >
@@ -799,6 +799,27 @@ export default function ChoreApp() {
   }, [kids, payouts]);
 
   const handleToggleDay = async (choreId: string, day: DayOfWeek) => {
+    const choreToUpdate = chores.find(c => c.id === choreId);
+    if (!choreToUpdate) return;
+
+    // Optimistically update UI state
+    const isCompleted = choreToUpdate.completedDays.includes(day);
+    const newCompletedDays = isCompleted 
+      ? choreToUpdate.completedDays.filter(d => d !== day)
+      : [...choreToUpdate.completedDays, day];
+      
+    const optimisticChore = { ...choreToUpdate, completedDays: newCompletedDays };
+    setChores(prev => prev.map(c => (c.id === choreId ? optimisticChore : c)));
+
+    // Optimistically show milestone modal
+    if (!isCompleted) {
+      const n = newCompletedDays.length;
+      if (n === 4 || n === 7) {
+        setShowModal({ show: true, milestone: n === 4 || n === 7, title: choreToUpdate.title });
+        setTimeout(() => setShowModal({ show: false, milestone: false, title: '' }), 2000);
+      }
+    }
+
     try {
       const response = await fetch(`${API_URL}/api/chores/${choreId}/toggle`, {
         method: 'POST',
@@ -806,16 +827,12 @@ export default function ChoreApp() {
         body: JSON.stringify({ day }),
       });
       if (!response.ok) throw new Error('Failed to toggle chore day');
-      const updated = await response.json();
-      setChores(prev => prev.map(c => (c.id === choreId ? updated : c)));
-      if (!updated.completedDays.includes(day)) return;
-      const n = updated.completedDays.length;
-      if (n === 4 || n === 7) {
-        setShowModal({ show: true, milestone: n === 4 || n === 7, title: updated.title });
-        setTimeout(() => setShowModal({ show: false, milestone: false, title: '' }), 2000);
-      }
+      
+      const serverUpdated = await response.json();
+      setChores(prev => prev.map(c => (c.id === choreId ? serverUpdated : c)));
     } catch (error) {
-      console.error(error);
+      console.error('Toggle failed, reverting:', error);
+      setChores(prev => prev.map(c => (c.id === choreId ? choreToUpdate : c)));
     }
   };
 
@@ -907,6 +924,10 @@ export default function ChoreApp() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const activeKidStats = useMemo(() => {
+    return getKidStats(activeKidId);
+  }, [activeKidId, chores]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-violet-50/30 to-slate-100 p-4 pb-16 font-sans text-slate-900 md:p-10">
       {showModal.show && (
@@ -934,7 +955,7 @@ export default function ChoreApp() {
       )}
 
       <div className="mx-auto max-w-6xl">
-        <header className="mb-10 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+        <header className="mb-10 grid gap-8 rounded-[2rem] bg-gradient-to-br from-slate-900 to-slate-800 p-8 shadow-2xl lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="text-left">
             <a
               href="/"
@@ -942,15 +963,15 @@ export default function ChoreApp() {
                 e.preventDefault();
                 goHome();
               }}
-              className={`${btnBase} ${btnPress} mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-200/80 bg-white/90 text-violet-600 shadow-sm hover:text-violet-700`}
+              className={`${btnBase} ${btnPress} mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800/50 text-violet-300 shadow-sm hover:border-violet-400 hover:text-violet-200`}
               aria-label="Home"
             >
               <Home size={22} strokeWidth={2.25} />
             </a>
-            <h1 className="text-4xl font-black tracking-tight text-black md:text-5xl">
+            <h1 className="text-4xl font-black tracking-tight text-white md:text-5xl">
             Moody Family Chore App
             </h1>
-            <p className="mt-2 max-w-lg text-slate-600">
+            <p className="mt-2 text-sm font-medium tracking-wide text-violet-200/70 uppercase">
               Chores and Rewards
             </p>
           </div>
@@ -1087,6 +1108,7 @@ export default function ChoreApp() {
                 <div className="space-y-6">
                   {kids.map(kid => {
                     const stats = getKidStats(kid.id);
+                    const kidPayouts = payouts.filter(p => p.childId === kid.id);
                     return (
                       <div key={kid.id} className={`${cardSurface} p-6 md:p-8`}>
                         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -1105,15 +1127,15 @@ export default function ChoreApp() {
                           setChores={setChores}
                           showParentApprove
                         />
-                        <div className="mt-8 rounded-[2rem] border border-slate-100 bg-slate-50/80 p-5">
+                        <div className="mt-8 rounded-[2rem] border border-slate-200 bg-white p-5">
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-sm font-black uppercase tracking-widest text-slate-400">Payout history</p>
+                              <p className="text-sm font-black uppercase tracking-widest text-slate-500">Payout history</p>
                               <p className="text-sm text-slate-500">Track how much has been paid out to {kid.name}.</p>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-violet-700">
-                                ${payouts.filter(p => p.childId === kid.id).reduce((sum, p) => sum + p.amount, 0).toFixed(2)} paid
+                                ${kidPayouts.reduce((sum, p) => sum + p.amount, 0).toFixed(2)} paid
                               </span>
                               <button
                                 type="button"
@@ -1124,18 +1146,16 @@ export default function ChoreApp() {
                               </button>
                             </div>
                           </div>
-                          {payouts.filter(p => p.childId === kid.id).length === 0 ? (
+                          {kidPayouts.length === 0 ? (
                             <p className="text-sm text-slate-500">No payouts recorded yet.</p>
                           ) : (
                             <div className="space-y-3">
-                              {payouts
-                                .filter(p => p.childId === kid.id)
-                                .map(payout => (
+                              {kidPayouts.map(payout => (
                                   <div key={payout.id} className="rounded-3xl bg-white p-4 shadow-sm shadow-slate-200/60">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="font-bold text-slate-900">${payout.amount.toFixed(2)}</p>
-                                        <p className="text-xs uppercase tracking-widest text-slate-400">
+                                        <p className="text-xs uppercase tracking-widest text-slate-500">
                                           {new Date(payout.timestamp).toLocaleDateString()}
                                         </p>
                                       </div>
@@ -1232,13 +1252,13 @@ export default function ChoreApp() {
               ))}
             </div>
 
-            {activeKidId && getKidStats(activeKidId).active.length > 0 && (
+            {activeKidId && activeKidStats.active.length > 0 && (
               <div className={`${cardSurface} p-6 md:p-8`}>
                 <h3 className="mb-6 text-xl font-black text-black">
                   {kids.find(k => k.id === activeKidId)?.name ?? 'My'}&apos;s progress
                 </h3>
                 <ChoreProgressRows
-                  choreList={getKidStats(activeKidId).active}
+                  choreList={activeKidStats.active}
                   setChores={setChores}
                   showParentApprove={false}
                 />
@@ -1254,7 +1274,7 @@ export default function ChoreApp() {
                     onClick={() => setSelectedDay(day)}
                     className={`${btnBase} ${btnPress} flex-1 rounded-2xl border-2 p-4 font-bold md:flex-none ${selectedDay === day
                       ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
-                      : 'border-transparent bg-white/80 text-slate-400 hover:border-violet-100'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-violet-200 hover:bg-violet-50'
                       }`}
                   >
                     {day.substring(0, 3)}
@@ -1266,7 +1286,7 @@ export default function ChoreApp() {
                   {selectedDay}
                 </h2>
                 <div className="space-y-4">
-                  {getKidStats(activeKidId).active.map(chore => {
+                  {activeKidStats.active.map(chore => {
                     const isDone = chore.completedDays.includes(selectedDay);
                     const earned = getChoreEarnedAmount(
                       chore.completedDays.length,
@@ -1279,11 +1299,11 @@ export default function ChoreApp() {
                         onClick={() => handleToggleDay(chore.id, selectedDay)}
                         className={`${btnBase} ${btnPress} flex w-full cursor-pointer items-center justify-between gap-4 rounded-[1.75rem] border-2 p-6 text-left transition-colors ${isDone
                           ? 'border-emerald-400 bg-emerald-50/90'
-                          : 'border-slate-100 bg-slate-50/80 hover:border-violet-200'
+                          : 'border-slate-200 bg-white hover:border-violet-300'
                           }`}
                       >
                         <div className="flex min-w-0 items-center gap-4">
-                          <div className={isDone ? 'text-emerald-600' : 'text-slate-200'}>
+                          <div className={isDone ? 'text-emerald-600' : 'text-slate-400'}>
                             {isDone ? <CheckCircle2 size={32} /> : <Circle size={32} />}
                           </div>
                           <div className="min-w-0">
@@ -1291,7 +1311,7 @@ export default function ChoreApp() {
                               className={`text-xl font-bold ${isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
                                 }`}
                             >
-                              {chore.title} <span className="text-sm font-medium text-slate-400">(${chore.baseValue.toFixed(2)})</span>
+                              {chore.title} <span className="text-sm font-medium text-slate-500">(${chore.baseValue.toFixed(2)})</span>
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                               <span>Value: ${chore.baseValue.toFixed(2)}</span>
@@ -1313,7 +1333,7 @@ export default function ChoreApp() {
                           </div>
                         </div>
                         <span
-                          className={`shrink-0 text-xl font-black ${chore.isApproved ? 'text-emerald-600' : 'text-slate-300'
+                          className={`shrink-0 text-xl font-black ${chore.isApproved ? 'text-emerald-600' : 'text-slate-500'
                             }`}
                         >
                           ${earned.toFixed(2)}
@@ -1349,7 +1369,7 @@ const StatCard = ({
       {icon}
     </div>
     <div className="min-w-0 text-left">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
       <p className="truncate text-2xl font-black text-slate-900">{val}</p>
     </div>
   </div>
