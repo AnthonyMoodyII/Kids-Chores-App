@@ -164,6 +164,26 @@ app.post('/api/chores/reset', async (req, res) => {
   res.json(allActive);
 });
 
+// Approve all eligible chores (>= 4 days completed, not yet approved)
+app.post('/api/chores/approve-all', async (req, res) => {
+  const candidates = await prisma.chore.findMany({
+    where: { isArchived: false, isApproved: false }
+  });
+  const eligibleIds = candidates
+    .filter(c => c.completedDays.length >= 4)
+    .map(c => c.id);
+
+  if (eligibleIds.length > 0) {
+    await prisma.chore.updateMany({
+      where: { id: { in: eligibleIds } },
+      data: { isApproved: true }
+    });
+  }
+
+  const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
+  res.json({ updatedCount: eligibleIds.length, chores: allActive });
+});
+
 // Unassign a template from multiple kids
 app.post('/api/chores/unassign', async (req, res) => {
   const { templateId, kidIds } = req.body;
@@ -235,10 +255,10 @@ app.post('/api/payouts/:kidId', async (req, res) => {
     }
   });
 
-  // Archive chores after payout
+  // Reset chores after payout instead of archiving so they remain assigned
   await prisma.chore.updateMany({
     where: { id: { in: approvedChores.map(c => c.id) } },
-    data: { isArchived: true }
+    data: { completedDays: [], isApproved: false }
   });
 
   const updatedChores = await prisma.chore.findMany({ where: { isArchived: false } });

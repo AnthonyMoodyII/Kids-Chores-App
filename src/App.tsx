@@ -848,6 +848,30 @@ export default function ChoreApp() {
     }
   };
 
+  const processPayoutAll = async () => {
+    const eligibleKids = kids.filter(k => getKidStats(k.id).canPayout);
+    if (eligibleKids.length === 0) return;
+    if (!window.confirm(`Process payout for ${eligibleKids.length} kid${eligibleKids.length > 1 ? 's' : ''}?`)) return;
+    for (const kid of eligibleKids) {
+      await processPayout(kid.id);
+    }
+  };
+
+  const handleApproveAll = async () => {
+    // Count chores eligible for approval: >= 4 days done, not yet approved
+    const eligible = chores.filter(c => !c.isArchived && !c.isApproved && c.completedDays.length >= 4);
+    if (eligible.length === 0) return;
+    if (!window.confirm(`Approve all ${eligible.length} eligible chore${eligible.length > 1 ? 's' : ''} across all kids?`)) return;
+    try {
+      const response = await fetch(`${API_URL}/api/chores/approve-all`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to approve all chores');
+      const { chores: updatedChores } = await response.json();
+      setChores(updatedChores);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handleDeletePayout = async (payoutId: string) => {
     if (!window.confirm('Delete this payout entry?')) return;
 
@@ -1105,6 +1129,28 @@ export default function ChoreApp() {
                   />
                 </div>
 
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-slate-500">Individual payout buttons appear on each child's card below.</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleApproveAll}
+                        disabled={!chores.some(c => !c.isArchived && !c.isApproved && c.completedDays.length >= 4)}
+                        className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-amber-500/25 disabled:pointer-events-none disabled:opacity-30`}
+                      >
+                        <ShieldCheck size={16} /> Approve All Eligible
+                      </button>
+                      <button
+                        type="button"
+                        onClick={processPayoutAll}
+                        disabled={!kids.some(k => getKidStats(k.id).canPayout)}
+                        className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-emerald-500/25 disabled:pointer-events-none disabled:opacity-30`}
+                      >
+                        <DollarSign size={16} /> Pay Out All Kids
+                      </button>
+                    </div>
+                  </div>
+
                 <div className="space-y-6">
                   {kids.map(kid => {
                     const stats = getKidStats(kid.id);
@@ -1311,7 +1357,7 @@ export default function ChoreApp() {
                               className={`text-xl font-bold ${isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
                                 }`}
                             >
-                              {chore.title} <span className="text-sm font-medium text-slate-500">(${chore.baseValue.toFixed(2)})</span>
+                              {chore.title}
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                               <span>Value: ${chore.baseValue.toFixed(2)}</span>
