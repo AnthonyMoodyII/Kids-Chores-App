@@ -15,15 +15,17 @@ model User {
 }
 
 model ChoreTemplate {
-  id        String @id @default(uuid())
-  title     String
-  baseValue Float
+  id          String   @id @default(uuid())
+  title       String
+  baseValue   Float
+  isMandatory Boolean  @default(false)
 }
 
 model Chore {
   id            String   @id @default(uuid())
   title         String
   baseValue     Float
+  isMandatory   Boolean  @default(false)
   templateId    String?
   assignedTo    String
   completedDays String[]

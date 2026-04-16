@@ -66,8 +66,8 @@ app.get('/api/templates', async (req, res) => {
 
 // Create a new chore template
 app.post('/api/templates', async (req, res) => {
-  const { title, baseValue } = req.body;
-  const template = await prisma.choreTemplate.create({ data: { title, baseValue } });
+  const { title, baseValue, isMandatory } = req.body;
+  const template = await prisma.choreTemplate.create({ data: { title, baseValue, isMandatory: isMandatory || false } });
   res.json(template);
 });
 
@@ -84,6 +84,27 @@ app.delete('/api/templates/:id', async (req, res) => {
   const { id } = req.params;
   await prisma.choreTemplate.delete({ where: { id } });
   res.sendStatus(200);
+});
+
+// Toggle mandatory for chore template and assigned active chores
+app.post('/api/templates/:id/toggle-mandatory', async (req, res) => {
+  const { id } = req.params;
+  const template = await prisma.choreTemplate.findUnique({ where: { id } });
+  
+  const updated = await prisma.choreTemplate.update({
+    where: { id },
+    data: { isMandatory: !template.isMandatory }
+  });
+  
+  await prisma.chore.updateMany({
+    where: { templateId: id, isArchived: false },
+    data: { isMandatory: !template.isMandatory }
+  });
+  
+  const templates = await prisma.choreTemplate.findMany();
+  const chores = await prisma.chore.findMany({ where: { isArchived: false } });
+  
+  res.json({ templates, chores });
 });
 
 // Assign a template to multiple kids
@@ -107,6 +128,7 @@ app.post('/api/chores/assign', async (req, res) => {
       data: {
         title: template.title,
         baseValue: template.baseValue,
+        isMandatory: template.isMandatory || false,
         templateId: template.id,
         assignedTo: kidId,
         completedDays: [],

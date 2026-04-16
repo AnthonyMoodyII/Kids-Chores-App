@@ -14,12 +14,14 @@ export interface ChoreTemplate {
   id: string;
   title: string;
   baseValue: number;
+  isMandatory?: boolean;
 }
 
 export interface Chore {
   id: string;
   title: string;
   baseValue: number;
+  isMandatory?: boolean;
   templateId?: string;
   assignedTo: string;
   completedDays: DayOfWeek[];
@@ -368,6 +370,7 @@ const ManageTab = ({
   const [newKidName, setNewKidName] = useState('');
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
   const [newTemplateValue, setNewTemplateValue] = useState('5.00');
+  const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [selectedKidIds, setSelectedKidIds] = useState<Set<string>>(new Set());
 
@@ -425,12 +428,13 @@ const ManageTab = ({
       const response = await fetch(`${API_URL}/api/templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTemplateTitle.trim(), baseValue: parseFloat(newTemplateValue) || 0 }),
+        body: JSON.stringify({ title: newTemplateTitle.trim(), baseValue: parseFloat(newTemplateValue) || 0, isMandatory: newTemplateIsMandatory }),
       });
       if (!response.ok) throw new Error('Failed to create template');
       const t = await response.json();
       setChoreTemplates(prev => [...prev, t]);
       setNewTemplateTitle('');
+      setNewTemplateIsMandatory(false);
       if (!selectedTemplateId) setSelectedTemplateId(t.id);
     } catch (error) {
       console.error(error);
@@ -458,6 +462,18 @@ const ManageTab = ({
       if (!response.ok) throw new Error('Failed to delete template');
       setChoreTemplates(prev => prev.filter(t => t.id !== templateId));
       if (selectedTemplateId === templateId) setSelectedTemplateId(null);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleToggleMandatory = async (templateId: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/templates/${templateId}/toggle-mandatory`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to toggle mandatory flag');
+      const data = await response.json();
+      setChoreTemplates(data.templates);
+      setChores(data.chores);
     } catch (error) {
       console.error(error);
     }
@@ -592,6 +608,15 @@ const ManageTab = ({
             value={newTemplateTitle}
             onChange={e => setNewTemplateTitle(e.target.value)}
           />
+          <label className="flex w-fit cursor-pointer select-none items-center gap-2">
+            <input
+              type="checkbox"
+              className="h-5 w-5 cursor-pointer rounded accent-emerald-600"
+              checked={newTemplateIsMandatory}
+              onChange={e => setNewTemplateIsMandatory(e.target.checked)}
+            />
+            <span className="flex items-center gap-1.5 text-sm font-black text-slate-700"><AlertCircle size={16} className="text-rose-500" /> Mandatory chore</span>
+          </label>
           <div className="flex gap-2">
             <input
               type="number"
@@ -622,22 +647,35 @@ const ManageTab = ({
                 onClick={() => setSelectedTemplateId(t.id)}
               >
                 <div className="min-w-0 text-left">
-                  <p className="truncate font-bold text-slate-900">{t.title}</p>
+                  <p className="truncate font-bold text-slate-900 flex items-center gap-1.5">{t.isMandatory && <AlertCircle size={14} className="text-rose-500" />} {t.title}</p>
                   <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
                     ${t.baseValue.toFixed(2)} / week
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={ev => {
-                    ev.stopPropagation();
-                    handleRemoveTemplate(t.id);
-                  }}
-                  className={`${btnBase} shrink-0 rounded-xl p-2 text-slate-300 hover:text-red-500`}
-                  aria-label={`Remove ${t.title}`}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={ev => {
+                      ev.stopPropagation();
+                      handleToggleMandatory(t.id);
+                    }}
+                    className={`${btnBase} shrink-0 rounded-xl p-2 ${t.isMandatory ? 'text-rose-500 hover:text-rose-600 bg-rose-50' : 'text-slate-300 hover:text-rose-500'}`}
+                    title="Toggle mandatory"
+                  >
+                    <AlertCircle size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={ev => {
+                      ev.stopPropagation();
+                      handleRemoveTemplate(t.id);
+                    }}
+                    className={`${btnBase} shrink-0 rounded-xl p-2 text-slate-300 hover:text-red-500`}
+                    aria-label={`Remove ${t.title}`}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -762,6 +800,11 @@ export default function ChoreApp() {
 
   const getKidStats = (kidId: string) => {
     const active = chores.filter(c => c.assignedTo === kidId && !c.isArchived);
+    active.sort((a, b) => {
+      if (a.isMandatory && !b.isMandatory) return -1;
+      if (!a.isMandatory && b.isMandatory) return 1;
+      return 0;
+    });
     const approved = active
       .filter(c => c.isApproved)
       .reduce((s, c) => s + getChoreEarnedAmount(c.completedDays.length, c.baseValue), 0);
@@ -1345,7 +1388,9 @@ export default function ChoreApp() {
                         onClick={() => handleToggleDay(chore.id, selectedDay)}
                         className={`${btnBase} ${btnPress} flex w-full cursor-pointer items-center justify-between gap-4 rounded-[1.75rem] border-2 p-6 text-left transition-colors ${isDone
                           ? 'border-emerald-400 bg-emerald-50/90'
-                          : 'border-slate-200 bg-white hover:border-violet-300'
+                          : chore.isMandatory 
+                            ? 'border-rose-400 bg-rose-50 hover:border-rose-500'
+                            : 'border-slate-200 bg-white hover:border-violet-300'
                           }`}
                       >
                         <div className="flex min-w-0 items-center gap-4">
@@ -1354,10 +1399,11 @@ export default function ChoreApp() {
                           </div>
                           <div className="min-w-0">
                             <p
-                              className={`text-xl font-bold ${isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
+                              className={`text-xl font-bold flex flex-wrap items-center gap-2 ${isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
                                 }`}
                             >
-                              {chore.title}
+                              <span>{chore.title}</span>
+                              {chore.isMandatory && <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-600 no-underline opacity-100"><AlertCircle size={12} /> Mandatory</span>}
                             </p>
                             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                               <span>Value: ${chore.baseValue.toFixed(2)}</span>
