@@ -1508,7 +1508,7 @@ export default function ChoreApp() {
           </div>
         ) : (
           <div className="animate-in slide-in-from-right-4 mx-auto max-w-6xl space-y-6 duration-500">
-            <p className="text-center text-xs font-black uppercase tracking-widest text-slate-400">{weekLabel}</p>
+            <p className="text-center text-xs font-black uppercase tracking-widest text-slate-700">{weekLabel}</p>
             <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
               {kids.map(k => (
                 <button
