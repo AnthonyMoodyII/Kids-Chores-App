@@ -117,7 +117,7 @@ export function ParentView({
     <div className="space-y-8">
       {/* Header row */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <h2 className="text-2xl font-black text-black">Household Hub</h2>
+        <h2 className="text-2xl !font-black !text-slate-900 [text-shadow:0_1px_3px_rgba(15,23,42,0.25)]">Household Hub</h2>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex rounded-2xl border border-white/60 bg-white/70 p-1 shadow-sm backdrop-blur">
             <button
