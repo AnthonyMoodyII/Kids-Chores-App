@@ -299,27 +299,6 @@ export function ParentView({
             })}
           </div>
 
-          {/* Clear all payouts */}
-          <section className={`${cardSurface} p-6 md:p-8`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-xl font-black text-slate-900">Clear all payout history</h3>
-                <p className="text-sm text-slate-500">
-                  Remove every payout record from the system. Use this when you want to reset
-                  payout history completely.
-                </p>
-                <p className="text-sm font-bold text-rose-600">This action is irreversible.</p>
-              </div>
-              <button
-                type="button"
-                onClick={onClearAllPayouts}
-                className={`${btnBase} ${btnPress} rounded-2xl bg-rose-600 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-rose-500/20`}
-              >
-                Clear all payouts
-              </button>
-            </div>
-          </section>
-
           {/* Weekly reset */}
           <section
             className={`${cardSurface} flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between md:p-8`}
@@ -340,6 +319,27 @@ export function ParentView({
             >
               Reset week
             </button>
+          </section>
+
+          {/* Clear all payouts */}
+          <section className={`${cardSurface} p-6 md:p-8`}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-xl font-black text-slate-900">Clear all payout history</h3>
+                <p className="text-sm text-slate-500">
+                  Remove every payout record from the system. Use this when you want to reset
+                  payout history completely.
+                </p>
+                <p className="text-sm font-bold text-rose-600">This action is irreversible.</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClearAllPayouts}
+                className={`${btnBase} ${btnPress} rounded-2xl bg-rose-600 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-rose-500/20`}
+              >
+                Clear all payouts
+              </button>
+            </div>
           </section>
         </div>
       ) : (
