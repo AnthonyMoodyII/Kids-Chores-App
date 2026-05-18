@@ -2,7 +2,10 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15-alpine
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
+    image: moodyplex/moody-chors-postgres:latest
     container_name: chorehero_db
     restart: always
     environment:

@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE "CashPayment" (
+CREATE TABLE IF NOT EXISTS "CashPayment" (
     "id" TEXT NOT NULL,
     "childId" TEXT NOT NULL,
     "childName" TEXT NOT NULL,
