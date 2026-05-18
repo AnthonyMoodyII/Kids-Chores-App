@@ -21,6 +21,7 @@ export default function ChoreApp() {
   const [activeKidId, setActiveKidId] = useState('');
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showCFManager, setShowCFManager] = useState(false);
   const [kidsImageBroken, setKidsImageBroken] = useState(false);
   const [milestone, setMilestone] = useState<{
     show: boolean;
@@ -268,6 +269,7 @@ export default function ChoreApp() {
           <ParentView
             parentAuthed={parentAuthed}
             showChangePassword={showChangePassword}
+            showCFManager={showCFManager}
             onLoginSuccess={hasChanged => {
               setParentAuthed(true);
               if (!hasChanged) setShowChangePassword(true);
@@ -275,6 +277,8 @@ export default function ChoreApp() {
             onSignOut={parentSignOut}
             onOpenChangePassword={() => setShowChangePassword(true)}
             onPasswordChanged={() => setShowChangePassword(false)}
+            onOpenCFManager={() => setShowCFManager(true)}
+            onCloseCFManager={() => setShowCFManager(false)}
             kids={kids}
             setKids={setKids}
             chores={chores}

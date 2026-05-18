@@ -8,6 +8,7 @@ import { CashLedger } from '../components/CashLedger';
 import { ManageTab } from '../components/ManageTab';
 import { ParentLoginForm } from '../components/ParentLoginForm';
 import { ChangePasswordForm } from '../components/ChangePasswordForm';
+import { CloudflareEmailManager, CloudflareIcon } from '../components/CloudflareEmailManager';
 
 interface Leaderboard extends User, KidStats {}
 
@@ -15,10 +16,13 @@ interface ParentViewProps {
   // auth
   parentAuthed: boolean;
   showChangePassword: boolean;
+  showCFManager: boolean;
   onLoginSuccess: (hasChanged: boolean) => void;
   onSignOut: () => void;
   onOpenChangePassword: () => void;
   onPasswordChanged: () => void;
+  onOpenCFManager: () => void;
+  onCloseCFManager: () => void;
   // data
   kids: User[];
   chores: Chore[];
@@ -51,10 +55,13 @@ interface ParentViewProps {
 export function ParentView({
   parentAuthed,
   showChangePassword,
+  showCFManager,
   onLoginSuccess,
   onSignOut,
   onOpenChangePassword,
   onPasswordChanged,
+  onOpenCFManager,
+  onCloseCFManager,
   kids,
   chores,
   setKids,
@@ -115,6 +122,15 @@ export function ParentView({
     );
   }
 
+  /* ── Cloudflare Access manager overlay ── */
+  if (showCFManager) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
+        <CloudflareEmailManager onRequestClose={onCloseCFManager} />
+      </div>
+    );
+  }
+
   /* ── Authed dashboard ── */
   return (
     <div className="space-y-8">
@@ -138,6 +154,13 @@ export function ParentView({
               Manage
             </button>
           </div>
+          <button
+            type="button"
+            onClick={onOpenCFManager}
+            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-orange-200 hover:text-orange-600`}
+          >
+            <CloudflareIcon size={16} /> Cloudflare Access
+          </button>
           <button
             type="button"
             onClick={onOpenChangePassword}

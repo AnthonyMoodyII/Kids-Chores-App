@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const cron = require('node-cron');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -296,19 +297,107 @@ app.get('/api/parent/status', async (req, res) => {
   res.json({ hasChanged: parent?.hasChanged ?? false });
 });
 
-// Google OAuth — verify the email against the configured allowed address
-app.post('/api/parent/google-auth', async (req, res) => {
-  const { email } = req.body;
-  const allowedEmail = process.env.PARENT_GOOGLE_EMAIL;
-  if (!allowedEmail) {
-    return res.status(503).json({ success: false, error: 'Google auth is not configured on this server.' });
+// CF certs cache
+let cfCertsCache = null;
+let cfCertsExpiry = 0;
+
+async function getCfCerts(issuer) {
+  const now = Date.now();
+  if (cfCertsCache && now < cfCertsExpiry) return cfCertsCache;
+  const res = await fetch(`${issuer}/cdn-cgi/access/certs`);
+  cfCertsCache = await res.json();
+  cfCertsExpiry = now + 3600 * 1000;
+  return cfCertsCache;
+}
+
+// Cloudflare Access auth — verifies CF JWT, checks email against DB allowedEmails
+app.post('/api/parent/cloudflare-auth', async (req, res) => {
+  const cfJwt = req.headers['cf-access-jwt-assertion'];
+  if (!cfJwt) {
+    return res.status(401).json({ success: false, error: 'No Cloudflare Access token found. Are you accessing through your Cloudflare tunnel?' });
   }
-  if (!email || email.toLowerCase() !== allowedEmail.toLowerCase()) {
-    return res.status(403).json({ success: false, error: 'This Google account is not authorized.' });
+  try {
+    // Decode header + payload to get kid and iss (no verification yet)
+    const [headerB64, payloadB64] = cfJwt.split('.');
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+    const unverifiedPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    const issuer = unverifiedPayload.iss;
+
+    // Validate issuer is a Cloudflare domain
+    if (!issuer || !issuer.endsWith('.cloudflareaccess.com')) {
+      return res.status(401).json({ success: false, error: 'Invalid token issuer.' });
+    }
+
+    // Fetch CF public certs and find matching key
+    const certs = await getCfCerts(issuer);
+    const certEntry = certs.public_certs?.find(c => c.kid === header.kid);
+    if (!certEntry) {
+      // Key not in cache, bust cache and retry once
+      cfCertsCache = null;
+      const freshCerts = await getCfCerts(issuer);
+      const retryEntry = freshCerts.public_certs?.find(c => c.kid === header.kid);
+      if (!retryEntry) return res.status(401).json({ success: false, error: 'Unknown signing key.' });
+    }
+    const cert = certEntry?.cert || (await getCfCerts(issuer)).public_certs?.find(c => c.kid === header.kid)?.cert;
+
+    // Verify signature and expiry
+    const payload = jwt.verify(cfJwt, cert, { algorithms: ['RS256'] });
+    const email = payload.email?.toLowerCase();
+    if (!email) return res.status(401).json({ success: false, error: 'No email in token.' });
+
+    // Check against DB allowed list
+    const parent = await prisma.parent.findFirst();
+    const allowed = (parent?.allowedEmails || []).map(e => e.toLowerCase());
+    if (!allowed.includes(email)) {
+      return res.status(403).json({ success: false, error: `${payload.email} is not authorized as a parent. Ask an admin to add this email in the portal.` });
+    }
+
+    console.log(`[auth] Cloudflare Access sign-in by ${payload.email}`);
+    res.json({ success: true, hasChanged: parent?.hasChanged ?? true });
+  } catch (err) {
+    console.error('[auth] CF token verification failed:', err.message);
+    res.status(401).json({ success: false, error: 'Invalid or expired Cloudflare Access token.' });
   }
+});
+
+// Get allowed CF emails
+app.get('/api/parent/cf-emails', async (req, res) => {
   const parent = await prisma.parent.findFirst();
-  console.log(`[auth] Google sign-in by ${email}`);
-  res.json({ success: true, hasChanged: parent?.hasChanged ?? true });
+  res.json({ emails: parent?.allowedEmails || [] });
+});
+
+// Add an email to the allowed CF list
+app.post('/api/parent/cf-emails', async (req, res) => {
+  const { email, currentPassword } = req.body;
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Invalid email.' });
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+  const normalized = email.trim().toLowerCase();
+  if (parent.allowedEmails.map(e => e.toLowerCase()).includes(normalized)) {
+    return res.json({ emails: parent.allowedEmails }); // already there
+  }
+  const updated = await prisma.parent.update({
+    where: { id: parent.id },
+    data: { allowedEmails: { push: email.trim() } },
+  });
+  res.json({ emails: updated.allowedEmails });
+});
+
+// Remove an email from the allowed CF list
+app.delete('/api/parent/cf-emails/:email', async (req, res) => {
+  const { email } = req.params;
+  const { currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+  const updated = await prisma.parent.update({
+    where: { id: parent.id },
+    data: { allowedEmails: parent.allowedEmails.filter(e => e.toLowerCase() !== email.toLowerCase()) },
+  });
+  res.json({ emails: updated.allowedEmails });
 });
 
 // Login

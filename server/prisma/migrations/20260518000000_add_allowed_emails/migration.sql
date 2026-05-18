@@ -1,0 +1,1 @@
+ALTER TABLE "Parent" ADD COLUMN IF NOT EXISTS "allowedEmails" TEXT[] NOT NULL DEFAULT '{}';
