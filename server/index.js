@@ -290,6 +290,27 @@ app.post('/api/payouts/:kidId', async (req, res) => {
 
 // --- Parent Endpoints ---
 
+// Status — returns whether default credentials have been changed (no auth required)
+app.get('/api/parent/status', async (req, res) => {
+  const parent = await prisma.parent.findFirst();
+  res.json({ hasChanged: parent?.hasChanged ?? false });
+});
+
+// Google OAuth — verify the email against the configured allowed address
+app.post('/api/parent/google-auth', async (req, res) => {
+  const { email } = req.body;
+  const allowedEmail = process.env.PARENT_GOOGLE_EMAIL;
+  if (!allowedEmail) {
+    return res.status(503).json({ success: false, error: 'Google auth is not configured on this server.' });
+  }
+  if (!email || email.toLowerCase() !== allowedEmail.toLowerCase()) {
+    return res.status(403).json({ success: false, error: 'This Google account is not authorized.' });
+  }
+  const parent = await prisma.parent.findFirst();
+  console.log(`[auth] Google sign-in by ${email}`);
+  res.json({ success: true, hasChanged: parent?.hasChanged ?? true });
+});
+
 // Login
 app.post('/api/parent/login', async (req, res) => {
   const { username, password } = req.body;

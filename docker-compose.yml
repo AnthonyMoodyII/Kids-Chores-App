@@ -30,6 +30,7 @@ services:
       DATABASE_URL: "postgresql://admin:password123@db:5432/chorehero"
       PORT: 3000
       PARENT_RESET_CODE: "moody-reset-2026"
+      PARENT_GOOGLE_EMAIL: ""   # Set to your Google account email to enable Google sign-in
     depends_on:
       - db
     networks:
@@ -41,6 +42,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ""
+        VITE_GOOGLE_CLIENT_ID: ""   # Set to your Google OAuth client ID
     image: moodyplex/chores-app-frontend:latest
     container_name: chorehero_ui
     ports:
