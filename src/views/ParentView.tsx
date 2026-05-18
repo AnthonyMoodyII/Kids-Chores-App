@@ -36,7 +36,6 @@ interface ParentViewProps {
   onApproveChore: (choreId: string) => void;
   onApproveAll: () => void;
   onProcessPayout: (kidId: string) => void;
-  onProcessPayoutAll: () => void;
   onDeletePayout: (id: string) => void;
   onClearPayoutHistory: (kidId: string) => void;
   onClearAllPayouts: () => void;
@@ -71,7 +70,6 @@ export function ParentView({
   onApproveChore,
   onApproveAll,
   onProcessPayout,
-  onProcessPayoutAll,
   onDeletePayout,
   onClearPayoutHistory,
   onClearAllPayouts,
@@ -186,26 +184,16 @@ export function ParentView({
             <p className="text-sm text-slate-500">
               Individual payout buttons appear on each child&apos;s card below.
             </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={onApproveAll}
-                disabled={
-                  !chores.some(c => !c.isArchived && !c.isApproved && c.completedDays.length >= 4)
-                }
-                className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-amber-500/25 disabled:pointer-events-none disabled:opacity-30`}
-              >
-                <ShieldCheck size={16} /> Approve All Eligible
-              </button>
-              <button
-                type="button"
-                onClick={onProcessPayoutAll}
-                disabled={!kids.some(k => getKidStats(k.id).canPayout)}
-                className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-emerald-500/25 disabled:pointer-events-none disabled:opacity-30`}
-              >
-                <DollarSign size={16} /> Pay Out All Kids
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onApproveAll}
+              disabled={
+                !chores.some(c => !c.isArchived && !c.isApproved && c.completedDays.length >= 4)
+              }
+              className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-amber-500/25 disabled:pointer-events-none disabled:opacity-30`}
+            >
+              <ShieldCheck size={16} /> Approve All Eligible
+            </button>
           </div>
 
           {/* Per-kid cards */}

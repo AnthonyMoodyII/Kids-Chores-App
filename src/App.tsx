@@ -47,7 +47,6 @@ export default function ChoreApp() {
     cashPayments,
     setCashPayments,
     processPayout,
-    processPayoutAll,
     handleDeletePayout,
     handleClearPayoutHistory,
     handleClearAllPayouts,
@@ -162,9 +161,6 @@ export default function ChoreApp() {
     handleToggleDay(choreId, day, triggerMilestone);
 
   const handleProcessPayout = (kidId: string) => processPayout(kidId, showToast);
-
-  const handleProcessPayoutAll = () =>
-    processPayoutAll(kids, getKidStats, showToast);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -294,7 +290,6 @@ export default function ChoreApp() {
             onApproveChore={handleApproveChore}
             onApproveAll={handleApproveAll}
             onProcessPayout={handleProcessPayout}
-            onProcessPayoutAll={handleProcessPayoutAll}
             onDeletePayout={handleDeletePayout}
             onClearPayoutHistory={handleClearPayoutHistory}
             onClearAllPayouts={handleClearAllPayouts}
