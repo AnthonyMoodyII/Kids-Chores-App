@@ -2,6 +2,7 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -322,6 +323,100 @@ app.post('/api/parent/set', async (req, res) => {
   }
   res.json({ success: true });
 });
+
+// --- Cash Payment Endpoints ---
+
+// Get all cash payments (optionally filtered by childId)
+app.get('/api/cash-payments', async (req, res) => {
+  const { childId } = req.query;
+  const where = childId ? { childId: String(childId) } : {};
+  const payments = await prisma.cashPayment.findMany({ where, orderBy: { timestamp: 'desc' } });
+  res.json(payments);
+});
+
+// Log a new cash payment
+app.post('/api/cash-payments', async (req, res) => {
+  const { childId, childName, amount, note } = req.body;
+  if (!childId || !childName || amount == null) {
+    return res.status(400).json({ error: 'childId, childName, and amount are required' });
+  }
+  const payment = await prisma.cashPayment.create({
+    data: {
+      childId,
+      childName,
+      amount: Math.round(parseFloat(amount) * 100) / 100,
+      note: note || null,
+    },
+  });
+  res.json(payment);
+});
+
+// Delete a cash payment entry
+app.delete('/api/cash-payments/:id', async (req, res) => {
+  const { id } = req.params;
+  await prisma.cashPayment.delete({ where: { id } });
+  res.sendStatus(200);
+});
+
+// --- Auto Weekly Close-Out (Sunday midnight) ---
+// Order: approve all eligible → payout each kid → reset chores
+
+async function runWeeklyCloseOut() {
+  console.log('[cron] Starting weekly close-out...');
+
+  // 1. Approve all eligible chores (>= 4 days, not yet approved)
+  const candidates = await prisma.chore.findMany({ where: { isArchived: false, isApproved: false } });
+  const eligibleIds = candidates.filter(c => c.completedDays.length >= 4).map(c => c.id);
+  if (eligibleIds.length > 0) {
+    await prisma.chore.updateMany({ where: { id: { in: eligibleIds } }, data: { isApproved: true } });
+    console.log(`[cron] Approved ${eligibleIds.length} chore(s).`);
+  }
+
+  // 2. Process payout for each kid who has approved chores
+  const kids = await prisma.user.findMany({ where: { role: 'child' } });
+  for (const kid of kids) {
+    const approvedChores = await prisma.chore.findMany({
+      where: { assignedTo: kid.id, isApproved: true, isArchived: false },
+    });
+    if (approvedChores.length === 0) continue;
+
+    const totalAmount = approvedChores.reduce((sum, c) => {
+      const n = c.completedDays.length;
+      let earned = 0;
+      if (n === 4) earned = c.baseValue * 0.8;
+      else if (n >= 5 && n <= 6) earned = c.baseValue;
+      else if (n === 7) earned = c.baseValue + 1;
+      return sum + earned;
+    }, 0);
+
+    await prisma.payoutRecord.create({
+      data: {
+        childId: kid.id,
+        childName: kid.name,
+        amount: Math.round(totalAmount * 100) / 100,
+        choresPaid: approvedChores.map(c => c.title),
+      },
+    });
+
+    await prisma.chore.updateMany({
+      where: { id: { in: approvedChores.map(c => c.id) } },
+      data: { completedDays: [], isApproved: false },
+    });
+
+    console.log(`[cron] Paid out $${totalAmount.toFixed(2)} to ${kid.name}.`);
+  }
+
+  // 3. Reset any remaining unapproved chores
+  await prisma.chore.updateMany({
+    where: { isArchived: false },
+    data: { completedDays: [], isApproved: false },
+  });
+
+  console.log('[cron] Weekly close-out complete.');
+}
+
+// Schedule: Sunday at midnight (00:00)
+cron.schedule('0 0 * * 0', runWeeklyCloseOut, { timezone: 'America/Chicago' });
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

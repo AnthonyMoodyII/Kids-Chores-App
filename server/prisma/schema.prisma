@@ -49,3 +49,12 @@ model Parent {
   password   String
   hasChanged Boolean @default(false)
 }
+
+model CashPayment {
+  id        String   @id @default(uuid())
+  childId   String
+  childName String
+  amount    Float
+  note      String?
+  timestamp DateTime @default(now())
+}

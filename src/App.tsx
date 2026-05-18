@@ -38,6 +38,15 @@ export interface PayoutRecord {
   choresPaid: string[];
 }
 
+export interface CashPayment {
+  id: string;
+  childId: string;
+  childName: string;
+  amount: number;
+  note?: string;
+  timestamp: string;
+}
+
 const DAYS: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:3000');
@@ -768,6 +777,11 @@ export default function ChoreApp() {
   const [chores, setChores] = useState<Chore[]>(() => initial.chores);
   const [choreTemplates, setChoreTemplates] = useState<ChoreTemplate[]>(() => initial.choreTemplates);
   const [payouts, setPayouts] = useState<PayoutRecord[]>(() => initial.payouts);
+  const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
+  const [showCashFormForKid, setShowCashFormForKid] = useState<string | null>(null);
+  const [cashFormAmount, setCashFormAmount] = useState('');
+  const [cashFormNote, setCashFormNote] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [view, setView] = useState<UserRole>('child');
   const [parentAuthed, setParentAuthed] = useState(readParentSession);
   const [parentTab, setParentTab] = useState<'dashboard' | 'manage' | 'history'>('dashboard');
@@ -780,17 +794,19 @@ export default function ChoreApp() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [kidsRes, templatesRes, choresRes, payoutsRes] = await Promise.all([
+        const [kidsRes, templatesRes, choresRes, payoutsRes, cashRes] = await Promise.all([
           fetch(`${API_URL}/api/kids`),
           fetch(`${API_URL}/api/templates`),
           fetch(`${API_URL}/api/chores`),
           fetch(`${API_URL}/api/payouts`),
+          fetch(`${API_URL}/api/cash-payments`),
         ]);
 
         if (kidsRes.ok) setKids(await kidsRes.json());
         if (templatesRes.ok) setChoreTemplates(await templatesRes.json());
         if (choresRes.ok) setChores(await choresRes.json());
         if (payoutsRes.ok) setPayouts(await payoutsRes.json());
+        if (cashRes.ok) setCashPayments(await cashRes.json());
       } catch (error) {
         console.error('Failed to load from backend API', error);
       }
@@ -888,6 +904,7 @@ export default function ChoreApp() {
       setChores(updatedChores);
     } catch (error) {
       console.error(error);
+      showToast('Payout failed — please try again.');
     }
   };
 
@@ -951,6 +968,37 @@ export default function ChoreApp() {
     }
   };
 
+  const handleAddCashPayment = async (kidId: string, kidName: string, amount: string, note: string) => {
+    const parsed = parseFloat(amount);
+    if (!parsed || parsed <= 0) return;
+    try {
+      const response = await fetch(`${API_URL}/api/cash-payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ childId: kidId, childName: kidName, amount: parsed, note: note.trim() || undefined }),
+      });
+      if (!response.ok) throw new Error('Failed to log cash payment');
+      const newPayment = await response.json();
+      setCashPayments(prev => [newPayment, ...prev]);
+      setShowCashFormForKid(null);
+      setCashFormAmount('');
+      setCashFormNote('');
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDeleteCashPayment = async (paymentId: string) => {
+    if (!window.confirm('Delete this payment entry?')) return;
+    try {
+      const response = await fetch(`${API_URL}/api/cash-payments/${paymentId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete cash payment');
+      setCashPayments(prev => prev.filter(p => p.id !== paymentId));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const handleWeeklyReset = async () => {
     if (
       !window.confirm(
@@ -968,6 +1016,19 @@ export default function ChoreApp() {
       console.error(error);
     }
   };
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  const weekLabel = (() => {
+    const now = new Date();
+    const day = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((day + 6) % 7));
+    return `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  })();
 
   const navBtn = (active: boolean) =>
     `${btnBase} ${btnPress} px-8 py-3 rounded-[1.75rem] font-black uppercase text-[11px] tracking-wider ${active
@@ -1018,6 +1079,12 @@ export default function ChoreApp() {
       {showChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
           <ChangePasswordForm onSuccess={() => setShowChangePassword(false)} />
+        </div>
+      )}
+
+      {toastMsg && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-2xl bg-slate-900 px-6 py-3 text-sm font-bold text-white shadow-2xl">
+          {toastMsg}
         </div>
       )}
 
@@ -1198,6 +1265,10 @@ export default function ChoreApp() {
                   {kids.map(kid => {
                     const stats = getKidStats(kid.id);
                     const kidPayouts = payouts.filter(p => p.childId === kid.id);
+                    const kidCashPayments = cashPayments.filter(p => p.childId === kid.id);
+                    const totalEarned = kidPayouts.reduce((sum, p) => sum + p.amount, 0);
+                    const totalCashPaid = kidCashPayments.reduce((sum, p) => sum + p.amount, 0);
+                    const balanceOwed = Math.round((totalEarned - totalCashPaid) * 100) / 100;
                     return (
                       <div key={kid.id} className={`${cardSurface} p-6 md:p-8`}>
                         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -1220,11 +1291,11 @@ export default function ChoreApp() {
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <div>
                               <p className="text-sm font-black uppercase tracking-widest text-slate-500">Payout history</p>
-                              <p className="text-sm text-slate-500">Track how much has been paid out to {kid.name}.</p>
+                              <p className="text-sm text-slate-500">Chores approved and paid out to {kid.name}.</p>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-violet-700">
-                                ${kidPayouts.reduce((sum, p) => sum + p.amount, 0).toFixed(2)} paid
+                                ${totalEarned.toFixed(2)} total
                               </span>
                               <button
                                 type="button"
@@ -1261,6 +1332,118 @@ export default function ChoreApp() {
                                     </p>
                                   </div>
                                 ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Cash Ledger */}
+                        <div className="mt-6 rounded-[2rem] border border-emerald-100 bg-white p-5">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-black uppercase tracking-widest text-slate-500">Cash Ledger</p>
+                              <p className="text-sm text-slate-500">Track actual cash given to {kid.name}.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowCashFormForKid(showCashFormForKid === kid.id ? null : kid.id);
+                                setCashFormAmount('');
+                                setCashFormNote('');
+                              }}
+                              className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-emerald-500/25`}
+                            >
+                              <Plus size={14} /> Mark Payment
+                            </button>
+                          </div>
+
+                          {/* Summary */}
+                          <div className="mb-4 grid grid-cols-3 gap-3 text-center">
+                            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Earned</p>
+                              <p className="text-lg font-black text-slate-800">${totalEarned.toFixed(2)}</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid Out</p>
+                              <p className="text-lg font-black text-emerald-700">${totalCashPaid.toFixed(2)}</p>
+                            </div>
+                            <div className={`rounded-2xl border p-3 ${balanceOwed > 0 ? 'border-red-100 bg-red-50' : 'border-emerald-100 bg-emerald-50'}`}>
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Owed</p>
+                              <p className={`text-lg font-black ${balanceOwed > 0 ? 'text-red-600' : 'text-emerald-700'}`}>${balanceOwed.toFixed(2)}</p>
+                            </div>
+                          </div>
+
+                          {/* Add payment form */}
+                          {showCashFormForKid === kid.id && (
+                            <form
+                              onSubmit={e => { e.preventDefault(); handleAddCashPayment(kid.id, kid.name, cashFormAmount, cashFormNote); }}
+                              className="mb-4 space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"
+                            >
+                              <div className="flex gap-3">
+                                <div className="flex-1">
+                                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Amount ($)</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    placeholder="0.00"
+                                    className="w-full rounded-xl border border-white bg-white px-3 py-2.5 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
+                                    value={cashFormAmount}
+                                    onChange={e => setCashFormAmount(e.target.value)}
+                                    required
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="mb-1 block text-[10px] font-black uppercase tracking-widest text-slate-400">Note (optional)</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Sunday allowance"
+                                    className="w-full rounded-xl border border-white bg-white px-3 py-2.5 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
+                                    value={cashFormNote}
+                                    onChange={e => setCashFormNote(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  type="submit"
+                                  className={`${btnBase} ${btnPress} flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-md shadow-emerald-500/20`}
+                                >
+                                  Save Payment
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCashFormForKid(null)}
+                                  className={`${btnBase} ${btnPress} rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-wide text-slate-500`}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          )}
+
+                          {/* Payment history */}
+                          {kidCashPayments.length === 0 ? (
+                            <p className="text-sm text-slate-500">No cash payments recorded yet.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {kidCashPayments.map(p => (
+                                <div key={p.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+                                  <div>
+                                    <p className="font-bold text-emerald-700">${p.amount.toFixed(2)}</p>
+                                    <p className="text-xs text-slate-500">
+                                      {new Date(p.timestamp).toLocaleDateString()}
+                                      {p.note ? ` — ${p.note}` : ''}
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteCashPayment(p.id)}
+                                    className={`${btnBase} ${btnPress} rounded-xl p-2 text-slate-300 hover:text-red-500`}
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -1325,6 +1508,7 @@ export default function ChoreApp() {
           </div>
         ) : (
           <div className="animate-in slide-in-from-right-4 mx-auto max-w-6xl space-y-6 duration-500">
+            <p className="text-center text-xs font-black uppercase tracking-widest text-slate-400">{weekLabel}</p>
             <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
               {kids.map(k => (
                 <button
