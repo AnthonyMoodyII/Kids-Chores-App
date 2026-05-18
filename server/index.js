@@ -306,9 +306,42 @@ app.get('/api/parent', async (req, res) => {
   res.json({ username: parent.username });
 });
 
-// Set new credentials
+// Set new credentials — requires current password to prevent unauthorized changes
 app.post('/api/parent/set', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  // If a parent record exists, verify the current password before allowing change
+  if (parent && currentPassword !== undefined) {
+    const isValid = await bcrypt.compare(currentPassword, parent.password);
+    if (!isValid) return res.status(403).json({ success: false, error: 'Current password is incorrect.' });
+  }
+  const hashedPassword = await bcrypt.hash(password, 10);
+  if (parent) {
+    await prisma.parent.update({
+      where: { id: parent.id },
+      data: { username, password: hashedPassword, hasChanged: true }
+    });
+  } else {
+    await prisma.parent.create({
+      data: { username, password: hashedPassword, hasChanged: true }
+    });
+  }
+  res.json({ success: true });
+});
+
+// Emergency reset — requires PARENT_RESET_CODE env var (set in docker-compose.yml)
+app.post('/api/parent/reset', async (req, res) => {
+  const { resetCode, username, password } = req.body;
+  const expectedCode = process.env.PARENT_RESET_CODE;
+  if (!expectedCode) {
+    return res.status(503).json({ success: false, error: 'Reset code not configured on this server.' });
+  }
+  if (!resetCode || resetCode !== expectedCode) {
+    return res.status(403).json({ success: false, error: 'Invalid reset code.' });
+  }
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Username and password are required.' });
+  }
   const hashedPassword = await bcrypt.hash(password, 10);
   const parent = await prisma.parent.findFirst();
   if (parent) {
@@ -321,6 +354,7 @@ app.post('/api/parent/set', async (req, res) => {
       data: { username, password: hashedPassword, hasChanged: true }
     });
   }
+  console.log('[security] Parent credentials reset via emergency reset code.');
   res.json({ success: true });
 });
 

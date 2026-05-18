@@ -1,4 +1,4 @@
-import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut } from 'lucide-react';
+import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, KeyRound } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { btnBase, btnPress, cardSurface } from '../lib/constants';
@@ -17,6 +17,7 @@ interface ParentViewProps {
   showChangePassword: boolean;
   onLoginSuccess: (hasChanged: boolean) => void;
   onSignOut: () => void;
+  onOpenChangePassword: () => void;
   onPasswordChanged: () => void;
   // data
   kids: User[];
@@ -53,6 +54,7 @@ export function ParentView({
   showChangePassword,
   onLoginSuccess,
   onSignOut,
+  onOpenChangePassword,
   onPasswordChanged,
   kids,
   chores,
@@ -103,11 +105,14 @@ export function ParentView({
     );
   }
 
-  /* ── Change password overlay ── */
+  /* ── Change password overlay (shown after first login or via button) ── */
   if (showChangePassword) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
-        <ChangePasswordForm onSuccess={onPasswordChanged} />
+        <ChangePasswordForm
+          onSuccess={onPasswordChanged}
+          onCancel={onPasswordChanged}
+        />
       </div>
     );
   }
@@ -135,6 +140,13 @@ export function ParentView({
               Manage
             </button>
           </div>
+          <button
+            type="button"
+            onClick={onOpenChangePassword}
+            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-violet-200 hover:text-violet-600`}
+          >
+            <KeyRound size={16} /> Change Password
+          </button>
           <button
             type="button"
             onClick={onSignOut}

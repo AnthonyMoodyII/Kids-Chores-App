@@ -277,6 +277,7 @@ export default function ChoreApp() {
               if (!hasChanged) setShowChangePassword(true);
             }}
             onSignOut={parentSignOut}
+            onOpenChangePassword={() => setShowChangePassword(true)}
             onPasswordChanged={() => setShowChangePassword(false)}
             kids={kids}
             setKids={setKids}
