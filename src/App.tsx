@@ -253,18 +253,53 @@ export default function ChoreApp() {
 
   // ── Bound handlers that thread in shared dependencies ─────────────────────
   const handleToggle = async (choreId: string, day: DayOfWeek) => {
+    // ── Optimistic points update (immediate, before server round-trip) ──
+    const chore = chores.find(c => c.id === choreId);
+    if (chore) {
+      const ptsPerDay = 10 + Math.round(chore.baseValue * 4);
+      const isCurrentlyDone = chore.completedDays.includes(day);
+      const delta = isCurrentlyDone ? -ptsPerDay : ptsPerDay;
+
+      setPointBalances(prev => ({
+        ...prev,
+        [chore.assignedTo]: Math.max(0, (prev[chore.assignedTo] ?? 0) + delta),
+      }));
+
+      if (!isCurrentlyDone) {
+        const optimisticEntry: import('./types').PointLedgerEntry = {
+          id: `opt-${Date.now()}`,
+          childId: chore.assignedTo,
+          amount: ptsPerDay,
+          reason: `Completed: ${chore.title} (${day})`,
+          choreId: chore.id,
+          createdAt: new Date().toISOString(),
+        };
+        setLedger(prev => [optimisticEntry, ...prev]);
+      } else {
+        // Remove matching optimistic/real entry for this chore+day
+        setLedger(prev =>
+          prev.filter(
+            e => !(e.choreId === chore.id && e.reason.includes(`(${day})`) && e.amount > 0),
+          ),
+        );
+      }
+    }
+
+    // ── Server-confirmed update ──
     await handleToggleDay(choreId, day, triggerMilestone);
-    // Refresh balances after toggle (points may have changed)
-    refreshBalances();
-    // Refresh ledger for active kid
-    if (activeKidId) {
-      fetch(`${API_URL}/api/points/ledger/${activeKidId}`)
-        .then(r => r.ok ? r.json() : [])
-        .then(data => setLedger(prev => {
-          const others = prev.filter(e => e.childId !== activeKidId);
-          return [...others, ...data];
-        }))
-        .catch(() => {});
+
+    // Authoritative refresh — replace optimistic data with real server state
+    const [, ledgerData] = await Promise.all([
+      refreshBalances(),
+      activeKidId
+        ? fetch(`${API_URL}/api/points/ledger/${activeKidId}`).then(r => r.ok ? r.json() : null)
+        : Promise.resolve(null),
+    ]);
+    if (ledgerData) {
+      setLedger(prev => [
+        ...prev.filter(e => e.childId !== activeKidId),
+        ...ledgerData,
+      ]);
     }
   };
 
