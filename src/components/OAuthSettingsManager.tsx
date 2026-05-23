@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, ExternalLink, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { API_URL, cardSurface, btnBase, btnPress } from '../lib/constants';
 
 export function OAuthIcon({ size = 20 }: { size?: number }) {
@@ -15,6 +15,103 @@ interface OAuthSettings {
 
 interface OAuthSettingsManagerProps {
   onRequestClose: () => void;
+}
+
+const CALLBACK_URL = 'https://chores.moodyplex.com/api/parent/oauth/callback';
+
+function SetupGuide() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyCallback = () => {
+    navigator.clipboard.writeText(CALLBACK_URL).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="mb-6 rounded-2xl border border-violet-100 bg-violet-50">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+      >
+        <span className="text-xs font-black uppercase tracking-widest text-violet-600">
+          How to set up Google OAuth
+        </span>
+        {open ? (
+          <ChevronUp size={14} className="shrink-0 text-violet-400" />
+        ) : (
+          <ChevronDown size={14} className="shrink-0 text-violet-400" />
+        )}
+      </button>
+
+      {open && (
+        <div className="border-t border-violet-100 px-4 pb-4 pt-3 text-sm text-slate-600">
+          <ol className="space-y-3 list-none">
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-black text-white">1</span>
+              <span>
+                Go to{' '}
+                <a
+                  href="https://console.cloud.google.com/apis/credentials"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-bold text-violet-600 underline underline-offset-2 hover:text-violet-800"
+                >
+                  Google Cloud Console → Credentials
+                  <ExternalLink size={11} />
+                </a>
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-black text-white">2</span>
+              <span>
+                Click <strong>Create Credentials → OAuth 2.0 Client ID</strong>, choose{' '}
+                <strong>Web application</strong>
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-black text-white">3</span>
+              <div className="min-w-0">
+                <p className="mb-1.5">
+                  Under <strong>Authorized redirect URIs</strong>, add this exact URL:
+                </p>
+                <div className="flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2">
+                  <code className="min-w-0 flex-1 break-all text-[11px] font-bold text-slate-700">
+                    {CALLBACK_URL}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={copyCallback}
+                    className={`${btnBase} shrink-0 rounded-lg p-1.5 text-violet-500 hover:bg-violet-100`}
+                    aria-label="Copy callback URL"
+                  >
+                    {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                  </button>
+                </div>
+              </div>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-black text-white">4</span>
+              <span>
+                Save, then copy the <strong>Client ID</strong> and <strong>Client Secret</strong>{' '}
+                into the fields below
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[10px] font-black text-white">5</span>
+              <span>
+                Add each parent&apos;s Google email address in the{' '}
+                <strong>Authorized Parents</strong> section below
+              </span>
+            </li>
+          </ol>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function OAuthSettingsManager({ onRequestClose }: OAuthSettingsManagerProps) {
@@ -154,6 +251,8 @@ export function OAuthSettingsManager({ onRequestClose }: OAuthSettingsManagerPro
           <p className="text-sm text-slate-500">Configure Google sign-in for the parent portal</p>
         </div>
       </div>
+
+      <SetupGuide />
 
       {loading ? (
         <p className="text-sm text-slate-400">Loading…</p>
