@@ -125,8 +125,8 @@ async function seedRewards() {
 
 async function backfillPoints() {
   // Find all active chores that have completedDays
-  const chores = await prisma.choreTemplate.findMany({
-    where: { completedDays: { isEmpty: false } },
+  const chores = await prisma.chore.findMany({
+    where: { completedDays: { isEmpty: false }, isArchived: false },
   });
 
   const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
