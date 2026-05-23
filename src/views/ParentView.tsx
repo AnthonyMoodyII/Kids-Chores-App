@@ -1,4 +1,4 @@
-import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, KeyRound } from 'lucide-react';
+import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, KeyRound, Settings } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { btnBase, btnPress, cardSurface } from '../lib/constants';
@@ -8,7 +8,7 @@ import { CashLedger } from '../components/CashLedger';
 import { ManageTab } from '../components/ManageTab';
 import { ParentLoginForm } from '../components/ParentLoginForm';
 import { ChangePasswordForm } from '../components/ChangePasswordForm';
-import { CloudflareEmailManager, CloudflareIcon } from '../components/CloudflareEmailManager';
+import { OAuthSettingsManager } from '../components/OAuthSettingsManager';
 
 interface Leaderboard extends User, KidStats {}
 
@@ -16,13 +16,14 @@ interface ParentViewProps {
   // auth
   parentAuthed: boolean;
   showChangePassword: boolean;
-  showCFManager: boolean;
+  showOAuthSettings: boolean;
   onLoginSuccess: (hasChanged: boolean) => void;
   onSignOut: () => void;
   onOpenChangePassword: () => void;
   onPasswordChanged: () => void;
-  onOpenCFManager: () => void;
-  onCloseCFManager: () => void;
+  onOpenOAuthSettings: () => void;
+  onCloseOAuthSettings: () => void;
+  oauthError?: string | null;
   // data
   kids: User[];
   chores: Chore[];
@@ -55,13 +56,14 @@ interface ParentViewProps {
 export function ParentView({
   parentAuthed,
   showChangePassword,
-  showCFManager,
+  showOAuthSettings,
   onLoginSuccess,
   onSignOut,
   onOpenChangePassword,
   onPasswordChanged,
-  onOpenCFManager,
-  onCloseCFManager,
+  onOpenOAuthSettings,
+  onCloseOAuthSettings,
+  oauthError,
   kids,
   chores,
   setKids,
@@ -105,7 +107,7 @@ export function ParentView({
             ← Back to kids
           </button>
         </div>
-        <ParentLoginForm onSuccess={onLoginSuccess} />
+        <ParentLoginForm onSuccess={onLoginSuccess} oauthError={oauthError} />
       </div>
     );
   }
@@ -122,11 +124,11 @@ export function ParentView({
     );
   }
 
-  /* ── Cloudflare Access manager overlay ── */
-  if (showCFManager) {
+  /* ── OAuth Settings overlay ── */
+  if (showOAuthSettings) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
-        <CloudflareEmailManager onRequestClose={onCloseCFManager} />
+        <OAuthSettingsManager onRequestClose={onCloseOAuthSettings} />
       </div>
     );
   }
@@ -156,10 +158,10 @@ export function ParentView({
           </div>
           <button
             type="button"
-            onClick={onOpenCFManager}
-            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-orange-200 hover:text-orange-600`}
+            onClick={onOpenOAuthSettings}
+            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-violet-200 hover:text-violet-600`}
           >
-            <CloudflareIcon size={16} /> Cloudflare Access
+            <Settings size={16} /> OAuth Settings
           </button>
           <button
             type="button"

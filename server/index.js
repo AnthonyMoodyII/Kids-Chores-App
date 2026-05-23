@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
 const cron = require('node-cron');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -289,6 +289,30 @@ app.post('/api/payouts/:kidId', async (req, res) => {
   res.json({ payout, updatedChores });
 });
 
+// --- OIDC OAuth helpers ---
+
+// OIDC discovery cache
+let _oidcCache = null, _oidcCacheExpiry = 0;
+async function discoverOidc(issuer) {
+  if (_oidcCache && Date.now() < _oidcCacheExpiry) return _oidcCache;
+  const url = issuer.includes('openid-configuration') ? issuer : `${issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
+  _oidcCache = await res.json();
+  _oidcCacheExpiry = Date.now() + 3600_000;
+  return _oidcCache;
+}
+
+// OAuth state store
+const _oauthStates = new Map();
+setInterval(() => { const now = Date.now(); for (const [k,v] of _oauthStates) if (v < now) _oauthStates.delete(k); }, 600_000);
+
+function getAppUrl(req) {
+  const cfg = process.env.APP_URL; if (cfg) return cfg.replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  return `${proto}://${req.headers['host'] || 'localhost:8080'}`;
+}
+
 // --- Parent Endpoints ---
 
 // Status — returns whether default credentials have been changed (no auth required)
@@ -297,67 +321,79 @@ app.get('/api/parent/status', async (req, res) => {
   res.json({ hasChanged: parent?.hasChanged ?? false });
 });
 
-// CF certs cache
-let cfCertsCache = null;
-let cfCertsExpiry = 0;
-
-async function getCfCerts(issuer) {
-  const now = Date.now();
-  if (cfCertsCache && now < cfCertsExpiry) return cfCertsCache;
-  const res = await fetch(`${issuer}/cdn-cgi/access/certs`);
-  cfCertsCache = await res.json();
-  cfCertsExpiry = now + 3600 * 1000;
-  return cfCertsCache;
-}
-
-// Cloudflare Access auth — verifies CF JWT, checks email against DB allowedEmails
-app.post('/api/parent/cloudflare-auth', async (req, res) => {
-  const cfJwt = req.headers['cf-access-jwt-assertion'];
-  if (!cfJwt) {
-    return res.status(401).json({ success: false, error: 'No Cloudflare Access token found. Are you accessing through your Cloudflare tunnel?' });
-  }
+// GET /api/parent/oauth/login — initiates the OAuth flow
+app.get('/api/parent/oauth/login', async (req, res) => {
+  const parent = await prisma.parent.findFirst();
+  const issuer = parent?.oauthIssuer, clientId = parent?.oauthClientId;
+  if (!issuer || !clientId) return res.redirect(`${getAppUrl(req)}/?oauth_error=${encodeURIComponent('OAuth is not configured. Set it up in the parent portal.')}`);
   try {
-    // Decode header + payload to get kid and iss (no verification yet)
-    const [headerB64, payloadB64] = cfJwt.split('.');
-    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
-    const unverifiedPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-    const issuer = unverifiedPayload.iss;
-
-    // Validate issuer is a Cloudflare domain
-    if (!issuer || !issuer.endsWith('.cloudflareaccess.com')) {
-      return res.status(401).json({ success: false, error: 'Invalid token issuer.' });
-    }
-
-    // Fetch CF public certs and find matching key
-    const certs = await getCfCerts(issuer);
-    const certEntry = certs.public_certs?.find(c => c.kid === header.kid);
-    if (!certEntry) {
-      // Key not in cache, bust cache and retry once
-      cfCertsCache = null;
-      const freshCerts = await getCfCerts(issuer);
-      const retryEntry = freshCerts.public_certs?.find(c => c.kid === header.kid);
-      if (!retryEntry) return res.status(401).json({ success: false, error: 'Unknown signing key.' });
-    }
-    const cert = certEntry?.cert || (await getCfCerts(issuer)).public_certs?.find(c => c.kid === header.kid)?.cert;
-
-    // Verify signature and expiry
-    const payload = jwt.verify(cfJwt, cert, { algorithms: ['RS256'] });
-    const email = payload.email?.toLowerCase();
-    if (!email) return res.status(401).json({ success: false, error: 'No email in token.' });
-
-    // Check against DB allowed list
-    const parent = await prisma.parent.findFirst();
-    const allowed = (parent?.allowedEmails || []).map(e => e.toLowerCase());
-    if (!allowed.includes(email)) {
-      return res.status(403).json({ success: false, error: `${payload.email} is not authorized as a parent. Ask an admin to add this email in the portal.` });
-    }
-
-    console.log(`[auth] Cloudflare Access sign-in by ${payload.email}`);
-    res.json({ success: true, hasChanged: parent?.hasChanged ?? true });
+    const oidc = await discoverOidc(issuer);
+    const state = crypto.randomBytes(32).toString('hex');
+    _oauthStates.set(state, Date.now() + 600_000);
+    const params = new URLSearchParams({ client_id: clientId, redirect_uri: `${getAppUrl(req)}/api/parent/oauth/callback`, response_type: 'code', scope: 'openid email profile', state });
+    res.redirect(`${oidc.authorization_endpoint}?${params}`);
   } catch (err) {
-    console.error('[auth] CF token verification failed:', err.message);
-    res.status(401).json({ success: false, error: 'Invalid or expired Cloudflare Access token.' });
+    console.error('[oauth] login:', err.message);
+    res.redirect(`${getAppUrl(req)}/?oauth_error=${encodeURIComponent('Could not reach OAuth provider.')}`);
   }
+});
+
+// GET /api/parent/oauth/callback — handles Google's redirect back
+app.get('/api/parent/oauth/callback', async (req, res) => {
+  const appUrl = getAppUrl(req);
+  const { code, state, error } = req.query;
+  if (error) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`OAuth error: ${error}`)}`);
+  if (!code || !state || !_oauthStates.has(state)) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('Invalid or expired OAuth state. Please try again.')}`);
+  _oauthStates.delete(state);
+  const parent = await prisma.parent.findFirst();
+  const { oauthIssuer: issuer, oauthClientId: clientId, oauthClientSecret: clientSecret } = parent || {};
+  if (!issuer || !clientId || !clientSecret) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth not configured.')}`);
+  try {
+    const oidc = await discoverOidc(issuer);
+    const redirectUri = `${appUrl}/api/parent/oauth/callback`;
+    const tokenRes = await fetch(oidc.token_endpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret }), signal: AbortSignal.timeout(10000) });
+    if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status}`);
+    const tokens = await tokenRes.json();
+    let email = null;
+    if (tokens.id_token) { const p = JSON.parse(Buffer.from(tokens.id_token.split('.')[1], 'base64url').toString()); email = p.email; }
+    if (!email && tokens.access_token && oidc.userinfo_endpoint) {
+      const ui = await fetch(oidc.userinfo_endpoint, { headers: { Authorization: `Bearer ${tokens.access_token}` }, signal: AbortSignal.timeout(5000) });
+      if (ui.ok) email = (await ui.json()).email;
+    }
+    if (!email) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth provider did not return an email.')}`);
+    const allowed = (parent.allowedEmails || []).map(e => e.toLowerCase());
+    if (!allowed.includes(email.toLowerCase())) {
+      console.log(`[auth] OAuth denied for ${email}`);
+      return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`${email} is not authorized as a parent. Add this email in OAuth Settings.`)}`);
+    }
+    console.log(`[auth] OAuth sign-in by ${email}`);
+    res.redirect(`${appUrl}/?parent_authed=1`);
+  } catch (err) {
+    console.error('[oauth] callback:', err.message);
+    res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`OAuth login failed: ${err.message}`)}`);
+  }
+});
+
+// GET /api/parent/oauth/settings — returns current config (secret masked)
+app.get('/api/parent/oauth/settings', async (req, res) => {
+  const parent = await prisma.parent.findFirst();
+  res.json({ oauthIssuer: parent?.oauthIssuer || '', oauthClientId: parent?.oauthClientId || '', oauthClientSecretSet: !!(parent?.oauthClientSecret), allowedEmails: parent?.allowedEmails || [] });
+});
+
+// POST /api/parent/oauth/settings — update OAuth config (requires password)
+app.post('/api/parent/oauth/settings', async (req, res) => {
+  const { currentPassword, oauthIssuer, oauthClientId, oauthClientSecret } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+  const data = {};
+  if (oauthIssuer !== undefined) data.oauthIssuer = oauthIssuer.trim() || null;
+  if (oauthClientId !== undefined) data.oauthClientId = oauthClientId.trim() || null;
+  if (oauthClientSecret?.trim()) data.oauthClientSecret = oauthClientSecret.trim();
+  await prisma.parent.update({ where: { id: parent.id }, data });
+  _oidcCache = null; // bust cache when config changes
+  res.json({ success: true });
 });
 
 // Get allowed CF emails

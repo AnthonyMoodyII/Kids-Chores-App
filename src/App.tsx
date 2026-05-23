@@ -21,7 +21,8 @@ export default function ChoreApp() {
   const [activeKidId, setActiveKidId] = useState('');
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showCFManager, setShowCFManager] = useState(false);
+  const [showOAuthSettings, setShowOAuthSettings] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
   const [kidsImageBroken, setKidsImageBroken] = useState(false);
   const [milestone, setMilestone] = useState<{
     show: boolean;
@@ -56,6 +57,23 @@ export default function ChoreApp() {
   } = usePayouts();
 
   const { toastMsg, showToast } = useToast();
+
+  // ── Handle OAuth redirect params ─────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('parent_authed') === '1') {
+      writeParentSession(true);
+      setParentAuthed(true);
+      setView('parent');
+      window.history.replaceState({}, '', '/');
+    }
+    const err = params.get('oauth_error');
+    if (err) {
+      setOauthError(decodeURIComponent(err));
+      setView('parent');
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   // ── Bootstrap data from API ───────────────────────────────────────────────
   useEffect(() => {
@@ -269,16 +287,18 @@ export default function ChoreApp() {
           <ParentView
             parentAuthed={parentAuthed}
             showChangePassword={showChangePassword}
-            showCFManager={showCFManager}
+            showOAuthSettings={showOAuthSettings}
             onLoginSuccess={hasChanged => {
               setParentAuthed(true);
+              setOauthError(null);
               if (!hasChanged) setShowChangePassword(true);
             }}
             onSignOut={parentSignOut}
             onOpenChangePassword={() => setShowChangePassword(true)}
             onPasswordChanged={() => setShowChangePassword(false)}
-            onOpenCFManager={() => setShowCFManager(true)}
-            onCloseCFManager={() => setShowCFManager(false)}
+            onOpenOAuthSettings={() => setShowOAuthSettings(true)}
+            onCloseOAuthSettings={() => setShowOAuthSettings(false)}
+            oauthError={oauthError}
             kids={kids}
             setKids={setKids}
             chores={chores}
