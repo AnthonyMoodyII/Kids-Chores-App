@@ -30,7 +30,7 @@ services:
       DATABASE_URL: "postgresql://admin:password123@db:5432/chorehero"
       PORT: 3000
       PARENT_RESET_CODE: "moody-reset-2026"
-      APP_URL: ""   # e.g. https://chores.yourdomain.com — leave empty for auto-detect
+      APP_URL: "https://chores.moodyplex.com"
     depends_on:
       - db
     networks:
