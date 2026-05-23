@@ -147,7 +147,7 @@ export function ChildView({
           {/* Daily points chart */}
           {activeKidId && (
             <div className="mt-6">
-              <PointsDailyChart ledger={ledger} childId={activeKidId} />
+              <PointsDailyChart chores={activeKidStats.active} />
             </div>
           )}
         </div>

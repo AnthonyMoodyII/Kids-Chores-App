@@ -1,36 +1,32 @@
-import type { PointLedgerEntry } from '../types';
+import type { Chore } from '../types';
 
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_SHORT  = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 interface PointsDailyChartProps {
-  ledger: PointLedgerEntry[];
-  childId: string;
+  /** Active chores for this kid — completedDays tells us exactly which weekdays were done */
+  chores: Chore[];
 }
 
-export function PointsDailyChart({ ledger, childId }: PointsDailyChartProps) {
-  // Sum points earned per day-of-week this week from the ledger
-  // We use createdAt to bucket into day-of-week (Mon=0 … Sun=6)
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun
-  const mondayOffset = (dayOfWeek + 6) % 7;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - mondayOffset);
-  monday.setHours(0, 0, 0, 0);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 7);
+function chorePointsPerDay(baseValue: number) {
+  return 10 + Math.round(baseValue * 4);
+}
 
+export function PointsDailyChart({ chores }: PointsDailyChartProps) {
+  // Sum points per weekday directly from completedDays (day names are the source of truth)
   const dailyPts: number[] = [0, 0, 0, 0, 0, 0, 0];
-
-  for (const entry of ledger) {
-    if (entry.childId !== childId) continue;
-    const d = new Date(entry.createdAt);
-    if (d < monday || d >= sunday) continue;
-    const dayIdx = (d.getDay() + 6) % 7; // Mon=0 Sun=6
-    if (entry.amount > 0) dailyPts[dayIdx] += entry.amount;
+  for (const chore of chores) {
+    const ptsPerDay = chorePointsPerDay(chore.baseValue);
+    for (const day of chore.completedDays) {
+      const idx = DAYS_ORDER.indexOf(day);
+      if (idx >= 0) dailyPts[idx] += ptsPerDay;
+    }
   }
 
   const maxPts = Math.max(...dailyPts, 1);
+
+  // Today's day index (Mon=0 … Sun=6)
+  const todayIdx = (new Date().getDay() + 6) % 7;
 
   return (
     <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
@@ -41,7 +37,7 @@ export function PointsDailyChart({ ledger, childId }: PointsDailyChartProps) {
         {DAYS_ORDER.map((day, i) => {
           const pts = dailyPts[i];
           const pct = Math.round((pts / maxPts) * 100);
-          const isToday = i === mondayOffset;
+          const isToday = i === todayIdx;
           return (
             <div key={day} className="flex flex-1 flex-col items-center gap-1">
               {pts > 0 && (

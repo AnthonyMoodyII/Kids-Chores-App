@@ -123,8 +123,55 @@ async function seedRewards() {
   }
 }
 
+async function backfillPoints() {
+  // Find all active chores that have completedDays
+  const chores = await prisma.choreTemplate.findMany({
+    where: { completedDays: { isEmpty: false } },
+  });
+
+  const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // For each chore, check if ledger entries exist for each completed day
+  for (const chore of chores) {
+    const ptsPerDay = chorePointsPerDay(chore.baseValue);
+    for (const day of chore.completedDays) {
+      // Check for an existing ledger entry for this chore+day
+      const existing = await prisma.pointLedger.findFirst({
+        where: {
+          choreId: chore.id,
+          childId: chore.assignedTo,
+          amount: ptsPerDay,
+          reason: { contains: `(${day})` },
+        },
+      });
+      if (!existing) {
+        // Create a backdated entry — timestamp set to midnight of the current week's matching day
+        const now = new Date();
+        const currentDayIdx = (now.getDay() + 6) % 7; // Mon=0
+        const targetDayIdx = DAYS_ORDER.indexOf(day);
+        const diffDays = targetDayIdx - currentDayIdx;
+        const entryDate = new Date(now);
+        entryDate.setDate(now.getDate() + diffDays);
+        entryDate.setHours(12, 0, 0, 0); // noon on that weekday
+
+        await prisma.pointLedger.create({
+          data: {
+            childId: chore.assignedTo,
+            amount: ptsPerDay,
+            reason: `Completed: ${chore.title} (${day})`,
+            choreId: chore.id,
+            createdAt: entryDate,
+          },
+        });
+      }
+    }
+  }
+  console.log('Points backfill complete');
+}
+
 initParent().catch(console.error);
 seedRewards().catch(console.error);
+backfillPoints().catch(console.error);
 
 // ── Kids Endpoints ────────────────────────────────────────────────────────────
 
