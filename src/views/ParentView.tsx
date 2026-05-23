@@ -115,11 +115,13 @@ export function ParentView({
   /* ── Change password overlay (shown after first login or via button) ── */
   if (showChangePassword) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
-        <ChangePasswordForm
-          onSuccess={onPasswordChanged}
-          onCancel={onPasswordChanged}
-        />
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-md">
+        <div className="flex min-h-full items-center justify-center py-8">
+          <ChangePasswordForm
+            onSuccess={onPasswordChanged}
+            onCancel={onPasswordChanged}
+          />
+        </div>
       </div>
     );
   }
@@ -127,8 +129,10 @@ export function ParentView({
   /* ── OAuth Settings overlay ── */
   if (showOAuthSettings) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md">
-        <OAuthSettingsManager onRequestClose={onCloseOAuthSettings} />
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-md">
+        <div className="flex min-h-full items-start justify-center py-8">
+          <OAuthSettingsManager onRequestClose={onCloseOAuthSettings} />
+        </div>
       </div>
     );
   }
