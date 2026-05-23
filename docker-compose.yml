@@ -5,7 +5,7 @@ services:
     build:
       context: ./postgres
       dockerfile: Dockerfile
-    image: moodyplex/moody-chors-postgres:latest
+    image: moodyplex/moody-chores-postgres:latest
     container_name: chorehero_db
     restart: always
     environment:
