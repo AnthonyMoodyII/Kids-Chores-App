@@ -123,55 +123,8 @@ async function seedRewards() {
   }
 }
 
-async function backfillPoints() {
-  // Find all active chores that have completedDays
-  const chores = await prisma.chore.findMany({
-    where: { completedDays: { isEmpty: false }, isArchived: false },
-  });
-
-  const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-  // For each chore, check if ledger entries exist for each completed day
-  for (const chore of chores) {
-    const ptsPerDay = chorePointsPerDay(chore.baseValue);
-    for (const day of chore.completedDays) {
-      // Check for an existing ledger entry for this chore+day
-      const existing = await prisma.pointLedger.findFirst({
-        where: {
-          choreId: chore.id,
-          childId: chore.assignedTo,
-          amount: ptsPerDay,
-          reason: { contains: `(${day})` },
-        },
-      });
-      if (!existing) {
-        // Create a backdated entry — timestamp set to midnight of the current week's matching day
-        const now = new Date();
-        const currentDayIdx = (now.getDay() + 6) % 7; // Mon=0
-        const targetDayIdx = DAYS_ORDER.indexOf(day);
-        const diffDays = targetDayIdx - currentDayIdx;
-        const entryDate = new Date(now);
-        entryDate.setDate(now.getDate() + diffDays);
-        entryDate.setHours(12, 0, 0, 0); // noon on that weekday
-
-        await prisma.pointLedger.create({
-          data: {
-            childId: chore.assignedTo,
-            amount: ptsPerDay,
-            reason: `Completed: ${chore.title} (${day})`,
-            choreId: chore.id,
-            createdAt: entryDate,
-          },
-        });
-      }
-    }
-  }
-  console.log('Points backfill complete');
-}
-
 initParent().catch(console.error);
 seedRewards().catch(console.error);
-backfillPoints().catch(console.error);
 
 // ── Kids Endpoints ────────────────────────────────────────────────────────────
 
@@ -367,12 +320,54 @@ app.post('/api/chores/:id/approve', async (req, res) => {
 });
 
 app.post('/api/chores/reset', async (req, res) => {
-  await prisma.chore.updateMany({
-    where: { isArchived: false },
-    data: { completedDays: [], isApproved: false },
-  });
-  const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
-  res.json(allActive);
+  try {
+    // 1. Compute each kid's current balance before we clear completedDays
+    const chores = await prisma.chore.findMany({ where: { isArchived: false } });
+    const kids = await prisma.user.findMany({ where: { role: 'child' } });
+
+    const weeklyEarned = {};
+    for (const chore of chores) {
+      const ptsPerDay = chorePointsPerDay(chore.baseValue);
+      const earned = ptsPerDay * chore.completedDays.length;
+      const streak = chore.completedDays.length === 7 ? Math.round(ptsPerDay * 0.25) : 0;
+      weeklyEarned[chore.assignedTo] = (weeklyEarned[chore.assignedTo] || 0) + earned + streak;
+    }
+
+    // Apply existing ledger adjustments (previous carry-forwards and redemptions)
+    const existingLedger = await prisma.pointLedger.findMany();
+    const ledgerAdj = {};
+    for (const e of existingLedger) {
+      if (isChoreEntry(e.reason)) continue;
+      ledgerAdj[e.childId] = (ledgerAdj[e.childId] || 0) + e.amount;
+    }
+
+    // 2. Create a carry-forward ledger entry for each kid with their net balance
+    const today = new Date().toISOString().split('T')[0];
+    for (const kid of kids) {
+      const balance = Math.max(0, (weeklyEarned[kid.id] || 0) + (ledgerAdj[kid.id] || 0));
+      // Remove old non-chore ledger entries for this kid (they're baked into balance now)
+      await prisma.pointLedger.deleteMany({
+        where: { childId: kid.id, NOT: [{ reason: { startsWith: 'Completed:' } }, { reason: { startsWith: 'Unchecked:' } }, { reason: { startsWith: '7-day streak bonus:' } }, { reason: { startsWith: 'Streak bonus reversed:' } }] },
+      });
+      if (balance > 0) {
+        await prisma.pointLedger.create({
+          data: { childId: kid.id, amount: balance, reason: `Week carry-forward: ${today}` },
+        });
+      }
+    }
+
+    // 3. Clear completedDays and approval for the new week
+    await prisma.chore.updateMany({
+      where: { isArchived: false },
+      data: { completedDays: [], isApproved: false },
+    });
+
+    const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
+    res.json(allActive);
+  } catch (err) {
+    console.error('Reset error:', err);
+    res.status(500).json({ error: 'Reset failed' });
+  }
 });
 
 app.post('/api/chores/approve-all', async (req, res) => {
@@ -528,14 +523,48 @@ app.delete('/api/rewards/:id', async (req, res) => {
 
 // ── Points Endpoints ──────────────────────────────────────────────────────────
 
-// Get point balances for all kids
+// Labels for ledger entries that come from chore toggle events.
+// These are intentionally excluded from the balance sum because
+// completedDays is the authoritative source for current-week earnings.
+const CHORE_ENTRY_PREFIXES = ['Completed:', 'Unchecked:', '7-day streak bonus:', 'Streak bonus reversed:'];
+function isChoreEntry(reason) {
+  return CHORE_ENTRY_PREFIXES.some(p => reason.startsWith(p));
+}
+
+// Get point balances for all kids.
+// Balance = (current week earned from completedDays) + (ledger adjustments:
+//   carry-forward from prior weeks, minus redemptions). Chore completion ledger
+//   entries are ignored here — completedDays is always the accurate source.
 app.get('/api/points/balance', async (req, res) => {
-  const ledger = await prisma.pointLedger.findMany();
-  const balances = {};
-  for (const entry of ledger) {
-    balances[entry.childId] = (balances[entry.childId] || 0) + entry.amount;
+  try {
+    // 1. Earned this week — computed from completedDays (matches the chart exactly)
+    const chores = await prisma.chore.findMany({ where: { isArchived: false } });
+    const balances = {};
+    for (const chore of chores) {
+      const ptsPerDay = chorePointsPerDay(chore.baseValue);
+      const earned = ptsPerDay * chore.completedDays.length;
+      const streak = chore.completedDays.length === 7 ? Math.round(ptsPerDay * 0.25) : 0;
+      balances[chore.assignedTo] = (balances[chore.assignedTo] || 0) + earned + streak;
+    }
+
+    // 2. Apply carry-forward (from prior week resets) and redemptions from ledger.
+    //    Skip chore-toggle entries — they're accounted for by completedDays above.
+    const ledger = await prisma.pointLedger.findMany();
+    for (const e of ledger) {
+      if (isChoreEntry(e.reason)) continue;
+      balances[e.childId] = (balances[e.childId] || 0) + e.amount;
+    }
+
+    // Floor at 0
+    for (const id of Object.keys(balances)) {
+      if (balances[id] < 0) balances[id] = 0;
+    }
+
+    res.json(balances);
+  } catch (err) {
+    console.error('Balance error:', err);
+    res.status(500).json({ error: 'Failed to compute balances' });
   }
-  res.json(balances);
 });
 
 // Get full ledger for one kid
