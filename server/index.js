@@ -18,9 +18,9 @@ const DEFAULT_PARENT_USERNAME = 'parent';
 const DEFAULT_PARENT_PASSWORD = 'changeme';
 
 // ── Points helper ─────────────────────────────────────────────────────────────
-// 100 pts = $1; per-day award = Math.round(baseValue * 4), minimum 10
+// 10 pt base for all chores + Math.round(baseValue * 4) scaled on top
 function chorePointsPerDay(baseValue) {
-  return Math.max(10, Math.round(baseValue * 4));
+  return 10 + Math.round(baseValue * 4);
 }
 
 // ── Notification helpers ──────────────────────────────────────────────────────
