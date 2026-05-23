@@ -15,6 +15,8 @@ interface OAuthSettings {
 
 interface OAuthSettingsManagerProps {
   onRequestClose: () => void;
+  /** When true renders without the card wrapper / header — for embedding in a Settings accordion. */
+  inline?: boolean;
 }
 
 const CALLBACK_URL = 'https://chores.moodyplex.com/api/parent/oauth/callback';
@@ -114,7 +116,7 @@ function SetupGuide() {
   );
 }
 
-export function OAuthSettingsManager({ onRequestClose }: OAuthSettingsManagerProps) {
+export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSettingsManagerProps) {
   const [settings, setSettings] = useState<OAuthSettings>({
     oauthIssuer: '',
     oauthClientId: '',
@@ -240,18 +242,8 @@ export function OAuthSettingsManager({ onRequestClose }: OAuthSettingsManagerPro
     }
   };
 
-  return (
-    <div className={`${cardSurface} mx-auto w-full max-w-lg p-8 md:p-10`}>
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
-          <Settings size={24} />
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-black">OAuth Settings</h2>
-          <p className="text-sm text-slate-500">Configure Google sign-in for the parent portal</p>
-        </div>
-      </div>
-
+  const innerContent = (
+    <>
       <SetupGuide />
 
       {loading ? (
@@ -415,13 +407,32 @@ export function OAuthSettingsManager({ onRequestClose }: OAuthSettingsManagerPro
         </>
       )}
 
-      <button
-        type="button"
-        onClick={onRequestClose}
-        className={`${btnBase} ${btnPress} w-full rounded-2xl border border-slate-200 bg-white py-3 font-black uppercase tracking-wide text-slate-500`}
-      >
-        Done
-      </button>
+      {!inline && (
+        <button
+          type="button"
+          onClick={onRequestClose}
+          className={`${btnBase} ${btnPress} w-full rounded-2xl border border-slate-200 bg-white py-3 font-black uppercase tracking-wide text-slate-500`}
+        >
+          Done
+        </button>
+      )}
+    </>
+  );
+
+  if (inline) return <div className="space-y-0">{innerContent}</div>;
+
+  return (
+    <div className={`${cardSurface} mx-auto w-full max-w-lg p-8 md:p-10`}>
+      <div className="mb-8 flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+          <Settings size={24} />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-black">OAuth Settings</h2>
+          <p className="text-sm text-slate-500">Configure Google sign-in for the parent portal</p>
+        </div>
+      </div>
+      {innerContent}
     </div>
   );
 }

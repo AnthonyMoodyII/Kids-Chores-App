@@ -5,11 +5,13 @@ import { API_URL, cardSurface, btnBase, btnPress } from '../lib/constants';
 interface ChangePasswordFormProps {
   /** When true the form shows the emergency reset flow (uses reset code, no current password). */
   emergencyMode?: boolean;
+  /** When true renders without the card wrapper / header — for embedding in a Settings accordion. */
+  inline?: boolean;
   onSuccess: () => void;
   onCancel?: () => void;
 }
 
-export function ChangePasswordForm({ emergencyMode = false, onSuccess, onCancel }: ChangePasswordFormProps) {
+export function ChangePasswordForm({ emergencyMode = false, inline = false, onSuccess, onCancel }: ChangePasswordFormProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [newUsername, setNewUsername] = useState('');
@@ -66,25 +68,8 @@ export function ChangePasswordForm({ emergencyMode = false, onSuccess, onCancel 
     }
   };
 
-  return (
-    <div className={`${cardSurface} mx-auto max-w-md p-8 md:p-10`}>
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
-          {emergencyMode ? <KeyRound size={24} /> : <ShieldCheck size={24} />}
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-black">
-            {emergencyMode ? 'Emergency Reset' : 'Change Credentials'}
-          </h2>
-          <p className="text-sm text-slate-500">
-            {emergencyMode
-              ? 'Enter your server reset code to regain access'
-              : 'Update your parent login details'}
-          </p>
-        </div>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
+  const formContent = (
+    <form onSubmit={handleSubmit} className="space-y-4">
         {emergencyMode ? (
           <div>
             <label
@@ -184,7 +169,7 @@ export function ChangePasswordForm({ emergencyMode = false, onSuccess, onCancel 
           {emergencyMode ? 'Reset Credentials' : 'Save New Credentials'}
         </button>
 
-        {onCancel && (
+        {onCancel && !inline && (
           <button
             type="button"
             onClick={onCancel}
@@ -193,7 +178,29 @@ export function ChangePasswordForm({ emergencyMode = false, onSuccess, onCancel 
             Cancel
           </button>
         )}
-      </form>
+    </form>
+  );
+
+  if (inline) return formContent;
+
+  return (
+    <div className={`${cardSurface} mx-auto max-w-md p-8 md:p-10`}>
+      <div className="mb-8 flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+          {emergencyMode ? <KeyRound size={24} /> : <ShieldCheck size={24} />}
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-black">
+            {emergencyMode ? 'Emergency Reset' : 'Change Credentials'}
+          </h2>
+          <p className="text-sm text-slate-500">
+            {emergencyMode
+              ? 'Enter your server reset code to regain access'
+              : 'Update your parent login details'}
+          </p>
+        </div>
+      </div>
+      {formContent}
     </div>
   );
 }

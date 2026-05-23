@@ -62,3 +62,77 @@ model CashPayment {
   note      String?
   timestamp DateTime @default(now())
 }
+
+// ── Rewards & Points System ───────────────────────────────────────────────────
+
+model RewardTemplate {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  pointCost   Int
+  icon        String?
+  isActive    Boolean  @default(true)
+  isCustom    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model PointLedger {
+  id        String   @id @default(uuid())
+  childId   String
+  amount    Int
+  reason    String
+  choreId   String?
+  createdAt DateTime @default(now())
+}
+
+model RewardRedemption {
+  id               String   @id @default(uuid())
+  childId          String
+  childName        String
+  rewardTemplateId String
+  rewardTitle      String
+  pointCost        Int
+  timestamp        DateTime @default(now())
+}
+
+model RewardRequest {
+  id          String   @id @default(uuid())
+  childId     String
+  childName   String
+  title       String
+  description String?
+  status      String   @default("pending")
+  pointCost   Int?
+  createdAt   DateTime @default(now())
+}
+
+model RedemptionRequest {
+  id               String   @id @default(uuid())
+  childId          String
+  childName        String
+  rewardTemplateId String
+  rewardTitle      String
+  pointCost        Int
+  status           String   @default("pending")
+  timestamp        DateTime @default(now())
+}
+
+model NotificationSettings {
+  id                   String  @id @default("singleton")
+  pushoverAppToken     String?
+  pushoverUserKey      String?
+  pushoverEnabled      Boolean @default(false)
+  smtpHost             String?
+  smtpPort             Int?
+  smtpUser             String?
+  smtpPassword         String?
+  smtpFrom             String?
+  smtpEnabled          Boolean @default(false)
+  notifyChoreComplete  Boolean @default(true)
+  notifyStreakBonus    Boolean @default(true)
+  notifyRewardRequest  Boolean @default(true)
+  notifyRewardIdea     Boolean @default(true)
+  notifyWeeklyReset    Boolean @default(true)
+  notifyRewardApproved Boolean @default(true)
+}

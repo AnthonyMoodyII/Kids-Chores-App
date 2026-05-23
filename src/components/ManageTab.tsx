@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare } from 'lucide-react';
-import type { User, Chore, ChoreTemplate } from '../types';
+import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp } from 'lucide-react';
+import type { User, Chore, ChoreTemplate, RewardTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
 
 interface ManageTabProps {
@@ -11,6 +11,11 @@ interface ManageTabProps {
   choreTemplates: ChoreTemplate[];
   setChoreTemplates: React.Dispatch<React.SetStateAction<ChoreTemplate[]>>;
   setActiveKidId: (id: string) => void;
+  // Rewards catalog
+  rewards: RewardTemplate[];
+  onUpdateReward: (id: string, patch: Partial<RewardTemplate>) => Promise<void>;
+  onAddReward: (title: string, pointCost: number, icon: string, description?: string) => Promise<void>;
+  onDeleteReward: (id: string) => Promise<void>;
 }
 
 export function ManageTab({
@@ -21,6 +26,10 @@ export function ManageTab({
   choreTemplates,
   setChoreTemplates,
   setActiveKidId,
+  rewards,
+  onUpdateReward,
+  onAddReward,
+  onDeleteReward,
 }: ManageTabProps) {
   const [newKidName, setNewKidName] = useState('');
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
@@ -36,6 +45,14 @@ export function ManageTab({
 
   const [assigning, setAssigning] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
+
+  // Rewards catalog state
+  const [rewardCostEdits, setRewardCostEdits] = useState<Record<string, string>>({});
+  const [newRewardTitle, setNewRewardTitle] = useState('');
+  const [newRewardCost, setNewRewardCost] = useState('50');
+  const [newRewardIcon, setNewRewardIcon] = useState('🎁');
+  const [newRewardDesc, setNewRewardDesc] = useState('');
+  const [rewardCatalogOpen, setRewardCatalogOpen] = useState(false);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const selectedKid = kids.find(k => k.id === selectedViewKidId) ?? null;
@@ -597,6 +614,194 @@ export function ManageTab({
       </section>
 
       {/* ── Kid chores viewer ──────────────────────────────────────────────── */}
+      {/* ── Rewards Catalog ───────────────────────────────────────────────── */}
+      <section className={`${cardSurface} p-6 md:p-8`}>
+        <button
+          type="button"
+          onClick={() => setRewardCatalogOpen(v => !v)}
+          className={`${btnBase} flex w-full items-center justify-between gap-3`}
+        >
+          <h3 className="text-lg font-black flex items-center gap-3 text-slate-900">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+              <Gift size={22} />
+            </span>
+            Rewards Catalog
+            <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-black text-amber-700">
+              {rewards.length}
+            </span>
+          </h3>
+          {rewardCatalogOpen
+            ? <ChevronUp size={18} className="text-slate-400" />
+            : <ChevronDown size={18} className="text-slate-400" />}
+        </button>
+
+        {rewardCatalogOpen && (
+          <div className="mt-5 space-y-4">
+            {rewards.length === 0 ? (
+              <p className="py-4 text-center text-sm italic text-slate-400">No rewards yet — add one below.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {rewards
+                  .sort((a, b) => a.sortOrder - b.sortOrder)
+                  .map((r, idx) => {
+                    const editVal = rewardCostEdits[r.id] ?? String(r.pointCost);
+                    return (
+                      <div
+                        key={r.id}
+                        className={`flex flex-col gap-3 rounded-2xl border-2 p-4 transition-all ${
+                          r.isActive ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-white opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-2xl">{r.icon || '🎁'}</span>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-900 truncate">{r.title}</p>
+                              {r.description && (
+                                <p className="text-xs text-slate-400 truncate">{r.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            {/* Move up */}
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => onUpdateReward(r.id, { sortOrder: r.sortOrder - 1 })}
+                              className={`${btnBase} rounded-lg p-1.5 text-slate-300 hover:text-slate-600 disabled:opacity-30`}
+                              title="Move up"
+                            >
+                              <ChevronUp size={13} />
+                            </button>
+                            {/* Move down */}
+                            <button
+                              type="button"
+                              disabled={idx === rewards.length - 1}
+                              onClick={() => onUpdateReward(r.id, { sortOrder: r.sortOrder + 1 })}
+                              className={`${btnBase} rounded-lg p-1.5 text-slate-300 hover:text-slate-600 disabled:opacity-30`}
+                              title="Move down"
+                            >
+                              <ChevronDown size={13} />
+                            </button>
+                            {/* Delete */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Remove "${r.title}" from the catalog?`)) onDeleteReward(r.id);
+                              }}
+                              className={`${btnBase} rounded-lg p-1.5 text-slate-300 hover:text-red-500`}
+                              title="Delete"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Point cost inline edit */}
+                          <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <span className="text-xs font-black text-amber-600">⭐</span>
+                            <input
+                              type="number"
+                              min="1"
+                              className="w-full bg-transparent text-sm font-bold text-slate-800 outline-none"
+                              value={editVal}
+                              onChange={e => setRewardCostEdits(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              onBlur={() => {
+                                const cost = parseInt(editVal);
+                                if (cost > 0 && cost !== r.pointCost) {
+                                  onUpdateReward(r.id, { pointCost: cost });
+                                }
+                                setRewardCostEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                              }}
+                            />
+                            <span className="text-xs text-slate-400">pts</span>
+                          </div>
+                          {/* Active toggle */}
+                          <button
+                            type="button"
+                            onClick={() => onUpdateReward(r.id, { isActive: !r.isActive })}
+                            className={`${btnBase} relative h-6 w-11 rounded-full transition-colors shrink-0 ${r.isActive ? 'bg-amber-500' : 'bg-slate-300'}`}
+                            title={r.isActive ? 'Disable reward' : 'Enable reward'}
+                          >
+                            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${r.isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* Add custom reward */}
+            <details className="group">
+              <summary className={`${btnBase} ${btnPress} flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-amber-700 hover:bg-amber-100`}>
+                <Plus size={16} /> Add Custom Reward
+              </summary>
+              <div className="mt-3 space-y-3 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50/90 to-white p-4">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Emoji icon (e.g. 🎮)"
+                    className="w-24 shrink-0 rounded-xl border border-white bg-white px-3 py-3 text-center font-bold text-slate-800 outline-none ring-amber-500/30 focus:ring-2"
+                    value={newRewardIcon}
+                    onChange={e => setNewRewardIcon(e.target.value)}
+                    maxLength={4}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Reward name"
+                    className="flex-1 rounded-xl border border-white bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-amber-500/30 focus:ring-2"
+                    value={newRewardTitle}
+                    onChange={e => setNewRewardTitle(e.target.value)}
+                  />
+                </div>
+                <input
+                  type="text"
+                  placeholder="Description (optional)"
+                  className="w-full rounded-xl border border-white bg-white px-4 py-3 text-sm text-slate-700 outline-none ring-amber-500/30 focus:ring-2"
+                  value={newRewardDesc}
+                  onChange={e => setNewRewardDesc(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <div className="flex flex-1 items-center gap-2 rounded-xl border border-white bg-white px-4 py-3">
+                    <span className="text-sm font-black text-amber-600">⭐</span>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Points"
+                      className="w-full bg-transparent font-bold text-slate-800 outline-none"
+                      value={newRewardCost}
+                      onChange={e => setNewRewardCost(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!newRewardTitle.trim() || !parseInt(newRewardCost)}
+                    onClick={async () => {
+                      if (!newRewardTitle.trim() || !parseInt(newRewardCost)) return;
+                      await onAddReward(
+                        newRewardTitle.trim(),
+                        parseInt(newRewardCost),
+                        newRewardIcon || '🎁',
+                        newRewardDesc.trim() || undefined,
+                      );
+                      setNewRewardTitle('');
+                      setNewRewardCost('50');
+                      setNewRewardIcon('🎁');
+                      setNewRewardDesc('');
+                    }}
+                    className={`${btnBase} ${btnPress} shrink-0 rounded-xl bg-amber-500 px-5 py-3 font-black text-white shadow-lg shadow-amber-500/25 disabled:pointer-events-none disabled:opacity-40`}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
+        )}
+      </section>
+
       {selectedKid && (
         <section className={`${cardSurface} p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
           <div className="mb-6 flex items-center justify-between gap-4">

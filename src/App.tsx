@@ -5,6 +5,8 @@ import { API_URL, IMG_HOME, IMG_KIDS, btnBase, btnPress } from './lib/constants'
 import { readParentSession, writeParentSession } from './lib/session';
 import { useChores } from './hooks/useChores';
 import { usePayouts } from './hooks/usePayouts';
+import { usePoints } from './hooks/usePoints';
+import { useRewards } from './hooks/useRewards';
 import { useToast } from './hooks/useToast';
 import { MilestoneModal } from './components/MilestoneModal';
 import { ChildView } from './views/ChildView';
@@ -17,7 +19,7 @@ export default function ChoreApp() {
   const [kids, setKids] = useState<User[]>([]);
   const [view, setView] = useState<AppView>('child');
   const [parentAuthed, setParentAuthed] = useState(readParentSession);
-  const [parentTab, setParentTab] = useState<'dashboard' | 'manage'>('dashboard');
+  const [parentTab, setParentTab] = useState<'dashboard' | 'manage' | 'settings'>('dashboard');
   const [activeKidId, setActiveKidId] = useState('');
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Monday');
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -56,6 +58,37 @@ export default function ChoreApp() {
     handleDeleteCashPayment,
   } = usePayouts();
 
+  const {
+    pointBalances,
+    setPointBalances,
+    redemptions,
+    setRedemptions,
+    redemptionRequests,
+    setRedemptionRequests,
+    refreshBalances,
+    requestRedemption,
+    approveRedemptionRequest,
+    rejectRedemptionRequest,
+    redeemReward,
+    deleteRedemption,
+  } = usePoints();
+
+  const {
+    rewards,
+    setRewards,
+    rewardRequests,
+    setRewardRequests,
+    updateReward,
+    addReward,
+    deleteReward,
+    submitRewardIdea,
+    approveRewardRequest,
+    rejectRewardRequest,
+  } = useRewards();
+
+  // Per-kid point ledger (used in ChildView for daily chart)
+  const [ledger, setLedger] = useState<import('./types').PointLedgerEntry[]>([]);
+
   const { toastMsg, showToast } = useToast();
 
   // ── Handle OAuth redirect params ─────────────────────────────────────────
@@ -79,12 +112,20 @@ export default function ChoreApp() {
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
-        const [kidsRes, templatesRes, choresRes, payoutsRes, cashRes] = await Promise.all([
+        const [
+          kidsRes, templatesRes, choresRes, payoutsRes, cashRes,
+          rewardsRes, balancesRes, redemptionsRes, redemptionReqsRes, rewardReqsRes,
+        ] = await Promise.all([
           fetch(`${API_URL}/api/kids`),
           fetch(`${API_URL}/api/templates`),
           fetch(`${API_URL}/api/chores`),
           fetch(`${API_URL}/api/payouts`),
           fetch(`${API_URL}/api/cash-payments`),
+          fetch(`${API_URL}/api/rewards`),
+          fetch(`${API_URL}/api/points/balance`),
+          fetch(`${API_URL}/api/points/redemptions`),
+          fetch(`${API_URL}/api/redemption-requests`),
+          fetch(`${API_URL}/api/reward-requests`),
         ]);
 
         if (kidsRes.ok) {
@@ -96,6 +137,11 @@ export default function ChoreApp() {
         if (choresRes.ok) setChores(await choresRes.json());
         if (payoutsRes.ok) setPayouts(await payoutsRes.json());
         if (cashRes.ok) setCashPayments(await cashRes.json());
+        if (rewardsRes.ok) setRewards(await rewardsRes.json());
+        if (balancesRes.ok) setPointBalances(await balancesRes.json());
+        if (redemptionsRes.ok) setRedemptions(await redemptionsRes.json());
+        if (redemptionReqsRes.ok) setRedemptionRequests(await redemptionReqsRes.json());
+        if (rewardReqsRes.ok) setRewardRequests(await rewardReqsRes.json());
       } catch (error) {
         console.error('Failed to load from backend API', error);
       }
@@ -104,6 +150,19 @@ export default function ChoreApp() {
     fetchInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch ledger for active kid when switching kids (lazy)
+  useEffect(() => {
+    if (!activeKidId) return;
+    fetch(`${API_URL}/api/points/ledger/${activeKidId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setLedger(prev => {
+        // Merge: replace entries for this kid
+        const others = prev.filter(e => e.childId !== activeKidId);
+        return [...others, ...data];
+      }))
+      .catch(() => {});
+  }, [activeKidId]);
 
   // ── Derived values ────────────────────────────────────────────────────────
   const leaderboard = useMemo(
@@ -175,9 +234,39 @@ export default function ChoreApp() {
     setTimeout(() => setMilestone({ show: false, title: '', isMilestone: false }), 2000);
   };
 
+  // ── Void-returning wrappers for hook functions that return values ─────────
+  const handleRedeemReward = async (childId: string, rewardTemplateId: string): Promise<void> => {
+    await redeemReward(childId, rewardTemplateId);
+  };
+  const handleUpdateReward = async (id: string, patch: Partial<import('./types').RewardTemplate>): Promise<void> => {
+    await updateReward(id, patch);
+  };
+  const handleAddReward = async (title: string, pointCost: number, icon: string, description?: string): Promise<void> => {
+    await addReward(title, pointCost, icon, description);
+  };
+  const handleRequestRedemption = async (childId: string, childName: string, rewardTemplateId: string): Promise<void> => {
+    await requestRedemption(childId, childName, rewardTemplateId);
+  };
+  const handleSubmitRewardIdea = async (childId: string, childName: string, title: string, description?: string): Promise<void> => {
+    await submitRewardIdea(childId, childName, title, description);
+  };
+
   // ── Bound handlers that thread in shared dependencies ─────────────────────
-  const handleToggle = (choreId: string, day: DayOfWeek) =>
-    handleToggleDay(choreId, day, triggerMilestone);
+  const handleToggle = async (choreId: string, day: DayOfWeek) => {
+    await handleToggleDay(choreId, day, triggerMilestone);
+    // Refresh balances after toggle (points may have changed)
+    refreshBalances();
+    // Refresh ledger for active kid
+    if (activeKidId) {
+      fetch(`${API_URL}/api/points/ledger/${activeKidId}`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => setLedger(prev => {
+          const others = prev.filter(e => e.childId !== activeKidId);
+          return [...others, ...data];
+        }))
+        .catch(() => {});
+    }
+  };
 
   const handleProcessPayout = (kidId: string) => processPayout(kidId, showToast);
 
@@ -323,6 +412,21 @@ export default function ChoreApp() {
             onGoToKids={goHome}
             parentTab={parentTab}
             setParentTab={setParentTab}
+            pointBalances={pointBalances}
+            ledger={ledger}
+            rewards={rewards}
+            redemptions={redemptions}
+            redemptionRequests={redemptionRequests}
+            rewardRequests={rewardRequests}
+            onApproveRedemptionRequest={approveRedemptionRequest}
+            onRejectRedemptionRequest={rejectRedemptionRequest}
+            onDeleteRedemption={deleteRedemption}
+            onRedeemReward={handleRedeemReward}
+            onUpdateReward={handleUpdateReward}
+            onAddReward={handleAddReward}
+            onDeleteReward={deleteReward}
+            onApproveRewardRequest={approveRewardRequest}
+            onRejectRewardRequest={rejectRewardRequest}
           />
         ) : (
           <ChildView
@@ -334,6 +438,12 @@ export default function ChoreApp() {
             weekLabel={weekLabel}
             activeKidStats={activeKidStats}
             onToggleDay={handleToggle}
+            kidBalance={pointBalances[activeKidId] ?? 0}
+            ledger={ledger}
+            rewards={rewards}
+            redemptionRequests={redemptionRequests}
+            onRequestRedemption={handleRequestRedemption}
+            onSubmitRewardIdea={handleSubmitRewardIdea}
           />
         )}
       </div>

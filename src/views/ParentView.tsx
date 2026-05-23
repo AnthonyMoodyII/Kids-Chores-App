@@ -1,14 +1,25 @@
-import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, KeyRound, Settings } from 'lucide-react';
-import type { User, Chore, ChoreTemplate, PayoutRecord, CashPayment } from '../types';
+import { useState } from 'react';
+import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, Gift } from 'lucide-react';
+import type {
+  User, Chore, ChoreTemplate, PayoutRecord, CashPayment,
+  RewardTemplate, RewardRedemption, RedemptionRequest, RewardRequest,
+  PointLedgerEntry,
+} from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { btnBase, btnPress, cardSurface } from '../lib/constants';
 import { StatCard } from '../components/StatCard';
 import { ChoreProgressRows } from '../components/ChoreProgressRows';
 import { CashLedger } from '../components/CashLedger';
 import { ManageTab } from '../components/ManageTab';
+import { SettingsTab } from '../components/SettingsTab';
 import { ParentLoginForm } from '../components/ParentLoginForm';
 import { ChangePasswordForm } from '../components/ChangePasswordForm';
 import { OAuthSettingsManager } from '../components/OAuthSettingsManager';
+import { PointsBadge } from '../components/PointsBadge';
+import { PendingRewardRequests } from '../components/PendingRewardRequests';
+import { PendingRewardIdeas } from '../components/PendingRewardIdeas';
+import { RedeemRewardPanel } from '../components/RedeemRewardPanel';
+import { RedemptionHistory } from '../components/RedemptionHistory';
 
 interface Leaderboard extends User, KidStats {}
 
@@ -49,8 +60,24 @@ interface ParentViewProps {
   onWeeklyReset: () => void;
   onGoToKids: () => void;
   // tabs
-  parentTab: 'dashboard' | 'manage';
-  setParentTab: (tab: 'dashboard' | 'manage') => void;
+  parentTab: 'dashboard' | 'manage' | 'settings';
+  setParentTab: (tab: 'dashboard' | 'manage' | 'settings') => void;
+  // rewards & points
+  pointBalances: Record<string, number>;
+  ledger: PointLedgerEntry[];
+  rewards: RewardTemplate[];
+  redemptions: RewardRedemption[];
+  redemptionRequests: RedemptionRequest[];
+  rewardRequests: RewardRequest[];
+  onApproveRedemptionRequest: (id: string) => Promise<void>;
+  onRejectRedemptionRequest: (id: string) => Promise<void>;
+  onDeleteRedemption: (id: string) => Promise<void>;
+  onRedeemReward: (childId: string, rewardTemplateId: string) => Promise<void>;
+  onUpdateReward: (id: string, patch: Partial<RewardTemplate>) => Promise<void>;
+  onAddReward: (title: string, pointCost: number, icon: string, description?: string) => Promise<void>;
+  onDeleteReward: (id: string) => Promise<void>;
+  onApproveRewardRequest: (id: string, pointCost: number) => Promise<void>;
+  onRejectRewardRequest: (id: string) => Promise<void>;
 }
 
 export function ParentView({
@@ -59,9 +86,9 @@ export function ParentView({
   showOAuthSettings,
   onLoginSuccess,
   onSignOut,
-  onOpenChangePassword,
+  onOpenChangePassword: _onOpenChangePassword,
   onPasswordChanged,
-  onOpenOAuthSettings,
+  onOpenOAuthSettings: _onOpenOAuthSettings,
   onCloseOAuthSettings,
   oauthError,
   kids,
@@ -88,11 +115,32 @@ export function ParentView({
   onGoToKids,
   parentTab,
   setParentTab,
+  pointBalances,
+  ledger: _ledger,
+  rewards,
+  redemptions,
+  redemptionRequests,
+  rewardRequests,
+  onApproveRedemptionRequest,
+  onRejectRedemptionRequest,
+  onDeleteRedemption,
+  onRedeemReward,
+  onUpdateReward,
+  onAddReward,
+  onDeleteReward,
+  onApproveRewardRequest,
+  onRejectRewardRequest,
 }: ParentViewProps) {
+  const [redeemKidId, setRedeemKidId] = useState<string | null>(null);
+
   const tabBtn = (active: boolean) =>
     `${btnBase} ${btnPress} px-4 py-2 rounded-xl text-xs font-black ${
       active ? 'bg-violet-100 text-violet-700 shadow-inner' : 'text-slate-400 hover:text-slate-700'
     }`;
+
+  const pendingRedemptionCount = redemptionRequests.filter(r => r.status === 'pending').length;
+  const pendingRewardIdeaCount = rewardRequests.filter(r => r.status === 'pending').length;
+  const pendingBadge = pendingRedemptionCount + pendingRewardIdeaCount;
 
   /* ── Not authed ── */
   if (!parentAuthed) {
@@ -112,7 +160,7 @@ export function ParentView({
     );
   }
 
-  /* ── Change password overlay (shown after first login or via button) ── */
+  /* ── Change password overlay (shown after first login only) ── */
   if (showChangePassword) {
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-md">
@@ -126,7 +174,7 @@ export function ParentView({
     );
   }
 
-  /* ── OAuth Settings overlay ── */
+  /* ── OAuth Settings overlay (legacy — only if opened directly) ── */
   if (showOAuthSettings) {
     return (
       <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/45 p-4 backdrop-blur-md">
@@ -159,21 +207,19 @@ export function ParentView({
             >
               Manage
             </button>
+            <button
+              type="button"
+              onClick={() => setParentTab('settings')}
+              className={`${tabBtn(parentTab === 'settings')} relative`}
+            >
+              Settings
+              {pendingBadge > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white">
+                  {pendingBadge}
+                </span>
+              )}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onOpenOAuthSettings}
-            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-violet-200 hover:text-violet-600`}
-          >
-            <Settings size={16} /> OAuth Settings
-          </button>
-          <button
-            type="button"
-            onClick={onOpenChangePassword}
-            className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-violet-200 hover:text-violet-600`}
-          >
-            <KeyRound size={16} /> Change Password
-          </button>
           <button
             type="button"
             onClick={onSignOut}
@@ -184,7 +230,23 @@ export function ParentView({
         </div>
       </div>
 
-      {parentTab === 'dashboard' ? (
+      {parentTab === 'settings' ? (
+        <SettingsTab onPasswordChanged={onPasswordChanged} />
+      ) : parentTab === 'manage' ? (
+        <ManageTab
+          kids={kids}
+          setKids={setKids}
+          chores={chores}
+          setChores={setChores}
+          choreTemplates={choreTemplates}
+          setChoreTemplates={setChoreTemplates}
+          setActiveKidId={setActiveKidId}
+          rewards={rewards}
+          onUpdateReward={onUpdateReward}
+          onAddReward={onAddReward}
+          onDeleteReward={onDeleteReward}
+        />
+      ) : (
         <div className="animate-in fade-in space-y-8 duration-500">
           {/* Stat cards */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -207,6 +269,24 @@ export function ParentView({
               accent="from-violet-500 to-indigo-600"
             />
           </div>
+
+          {/* Pending reward requests */}
+          {redemptionRequests.some(r => r.status === 'pending') && (
+            <PendingRewardRequests
+              requests={redemptionRequests}
+              onApprove={onApproveRedemptionRequest}
+              onReject={onRejectRedemptionRequest}
+            />
+          )}
+
+          {/* Pending reward ideas */}
+          {rewardRequests.some(r => r.status === 'pending') && (
+            <PendingRewardIdeas
+              requests={rewardRequests}
+              onApprove={onApproveRewardRequest}
+              onReject={onRejectRewardRequest}
+            />
+          )}
 
           {/* Bulk actions */}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -232,20 +312,48 @@ export function ParentView({
               const kidPayouts = payouts.filter(p => p.childId === kid.id);
               const kidCashPayments = cashPayments.filter(p => p.childId === kid.id);
               const totalEarned = kidPayouts.reduce((sum, p) => sum + p.amount, 0);
+              const balance = pointBalances[kid.id] ?? 0;
+              const isRedeemOpen = redeemKidId === kid.id;
 
               return (
                 <div key={kid.id} className={`${cardSurface} p-6 md:p-8`}>
                   <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-xl font-black text-slate-900">{kid.name}&apos;s progress</h3>
-                    <button
-                      type="button"
-                      onClick={() => onProcessPayout(kid.id)}
-                      disabled={!stats.canPayout}
-                      className={`${btnBase} ${btnPress} rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-25`}
-                    >
-                      Payout
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h3 className="text-xl font-black text-slate-900">{kid.name}&apos;s progress</h3>
+                      <PointsBadge points={balance} size="sm" />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRedeemKidId(isRedeemOpen ? null : kid.id)}
+                        className={`${btnBase} ${btnPress} inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-black uppercase tracking-wide text-amber-700 hover:bg-amber-100`}
+                      >
+                        <Gift size={15} /> Redeem Reward
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onProcessPayout(kid.id)}
+                        disabled={!stats.canPayout}
+                        className={`${btnBase} ${btnPress} rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-25`}
+                      >
+                        Payout
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Redeem panel */}
+                  {isRedeemOpen && (
+                    <div className="mb-6">
+                      <RedeemRewardPanel
+                        kidId={kid.id}
+                        kidName={kid.name}
+                        balance={balance}
+                        rewards={rewards}
+                        onRedeem={rewardTemplateId => onRedeemReward(kid.id, rewardTemplateId)}
+                        onClose={() => setRedeemKidId(null)}
+                      />
+                    </div>
+                  )}
 
                   <ChoreProgressRows
                     choreList={stats.active}
@@ -314,6 +422,13 @@ export function ParentView({
                     )}
                   </div>
 
+                  {/* Redemption history */}
+                  <RedemptionHistory
+                    redemptions={redemptions}
+                    kidId={kid.id}
+                    onDelete={onDeleteRedemption}
+                  />
+
                   {/* Cash ledger */}
                   <CashLedger
                     kidId={kid.id}
@@ -371,16 +486,6 @@ export function ParentView({
             </div>
           </section>
         </div>
-      ) : (
-        <ManageTab
-          kids={kids}
-          setKids={setKids}
-          chores={chores}
-          setChores={setChores}
-          choreTemplates={choreTemplates}
-          setChoreTemplates={setChoreTemplates}
-          setActiveKidId={setActiveKidId}
-        />
       )}
     </div>
   );

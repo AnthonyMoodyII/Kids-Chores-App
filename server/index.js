@@ -4,6 +4,7 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const cron = require('node-cron');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const prisma = new PrismaClient();
@@ -16,116 +17,189 @@ app.use(express.json());
 const DEFAULT_PARENT_USERNAME = 'parent';
 const DEFAULT_PARENT_PASSWORD = 'changeme';
 
-// Initialize parent credentials if not exist
+// ── Points helper ─────────────────────────────────────────────────────────────
+// 100 pts = $1; per-day award = Math.round(baseValue * 4)
+function chorePointsPerDay(baseValue) {
+  return Math.round(baseValue * 4);
+}
+
+// ── Notification helpers ──────────────────────────────────────────────────────
+async function getNotifSettings() {
+  return prisma.notificationSettings.findUnique({ where: { id: 'singleton' } });
+}
+
+async function sendPushover(title, message) {
+  try {
+    const ns = await getNotifSettings();
+    if (!ns || !ns.pushoverEnabled || !ns.pushoverAppToken || !ns.pushoverUserKey) return;
+    await fetch('https://api.pushover.net/1/messages.json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: ns.pushoverAppToken,
+        user: ns.pushoverUserKey,
+        title,
+        message,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (err) {
+    console.error('[pushover] send error:', err.message);
+  }
+}
+
+async function sendEmail(subject, htmlBody) {
+  try {
+    const ns = await getNotifSettings();
+    if (!ns || !ns.smtpEnabled || !ns.smtpHost || !ns.smtpUser || !ns.smtpFrom) return;
+    const transporter = nodemailer.createTransport({
+      host: ns.smtpHost,
+      port: ns.smtpPort || 587,
+      secure: (ns.smtpPort || 587) === 465,
+      auth: { user: ns.smtpUser, pass: ns.smtpPassword },
+    });
+    await transporter.sendMail({
+      from: ns.smtpFrom,
+      to: ns.smtpFrom,
+      subject,
+      html: htmlBody,
+    });
+  } catch (err) {
+    console.error('[email] send error:', err.message);
+  }
+}
+
+async function notify(event, title, message, htmlBody) {
+  const ns = await getNotifSettings();
+  if (!ns) return;
+  const eventMap = {
+    choreComplete: ns.notifyChoreComplete,
+    streakBonus: ns.notifyStreakBonus,
+    rewardRequest: ns.notifyRewardRequest,
+    rewardIdea: ns.notifyRewardIdea,
+    weeklyReset: ns.notifyWeeklyReset,
+    rewardApproved: ns.notifyRewardApproved,
+  };
+  if (!eventMap[event]) return;
+  await Promise.all([
+    sendPushover(title, message),
+    sendEmail(title, htmlBody || `<p>${message}</p>`),
+  ]);
+}
+
+// ── Startup: init parent + seed rewards ───────────────────────────────────────
 async function initParent() {
   const existing = await prisma.parent.findFirst();
   if (!existing) {
-    const initialUsername = process.env.PARENT_USERNAME || DEFAULT_PARENT_USERNAME;
-    const initialPassword = process.env.PARENT_PASSWORD || DEFAULT_PARENT_PASSWORD;
-    const hashedPassword = await bcrypt.hash(initialPassword, 10);
+    const hashedPassword = await bcrypt.hash(
+      process.env.PARENT_PASSWORD || DEFAULT_PARENT_PASSWORD,
+      10,
+    );
     await prisma.parent.create({
       data: {
-        username: initialUsername,
+        username: process.env.PARENT_USERNAME || DEFAULT_PARENT_USERNAME,
         password: hashedPassword,
-        hasChanged: false
-      }
+        hasChanged: false,
+      },
     });
     console.log('Parent credentials initialized');
   }
 }
 
+const DEFAULT_REWARDS = [
+  { title: '30 min Video Game Time', description: 'Enjoy 30 minutes of your favorite video game', icon: '🎮', pointCost: 50, sortOrder: 0 },
+  { title: 'Extra TV Episode', description: 'Watch one extra TV show episode', icon: '📺', pointCost: 40, sortOrder: 1 },
+  { title: 'Stay Up 30 Min Later', description: 'Bedtime extended by 30 minutes tonight', icon: '🌙', pointCost: 60, sortOrder: 2 },
+  { title: 'Pick Dinner Tonight', description: 'You choose what the family has for dinner', icon: '🍕', pointCost: 80, sortOrder: 3 },
+  { title: 'Movie Night Pick', description: 'You choose the movie for family movie night', icon: '🎬', pointCost: 100, sortOrder: 4 },
+  { title: 'Small Treat at Store', description: 'Pick a small treat next time we go shopping', icon: '🛒', pointCost: 120, sortOrder: 5 },
+];
+
+async function seedRewards() {
+  const count = await prisma.rewardTemplate.count();
+  if (count === 0) {
+    await prisma.rewardTemplate.createMany({ data: DEFAULT_REWARDS });
+    console.log('Default rewards seeded');
+  }
+}
+
 initParent().catch(console.error);
+seedRewards().catch(console.error);
 
-// --- Kids Endpoints ---
+// ── Kids Endpoints ────────────────────────────────────────────────────────────
 
-// Get all kids
 app.get('/api/kids', async (req, res) => {
   const kids = await prisma.user.findMany({ where: { role: 'child' } });
   res.json(kids);
 });
 
-// Add a new kid
 app.post('/api/kids', async (req, res) => {
   const { name } = req.body;
   const kid = await prisma.user.create({ data: { name, role: 'child' } });
   res.json(kid);
 });
 
-// Delete a kid and their associated chores
 app.delete('/api/kids/:id', async (req, res) => {
   const { id } = req.params;
   await prisma.user.delete({ where: { id } });
   res.sendStatus(200);
 });
 
-// --- Template Endpoints ---
+// ── Template Endpoints ────────────────────────────────────────────────────────
 
-// Get all chore templates
 app.get('/api/templates', async (req, res) => {
   const templates = await prisma.choreTemplate.findMany();
   res.json(templates);
 });
 
-// Create a new chore template
 app.post('/api/templates', async (req, res) => {
   const { title, baseValue, isMandatory } = req.body;
-  const template = await prisma.choreTemplate.create({ data: { title, baseValue, isMandatory: isMandatory || false } });
+  const template = await prisma.choreTemplate.create({
+    data: { title, baseValue, isMandatory: isMandatory || false },
+  });
   res.json(template);
 });
 
-// --- Chore Endpoints ---
-
-// Get all active chores
-app.get('/api/chores', async (req, res) => {
-  const chores = await prisma.chore.findMany({ where: { isArchived: false } });
-  res.json(chores);
-});
-
-// Delete chore template (when removing from library)
 app.delete('/api/templates/:id', async (req, res) => {
   const { id } = req.params;
   await prisma.choreTemplate.delete({ where: { id } });
   res.sendStatus(200);
 });
 
-// Toggle mandatory for chore template and assigned active chores
 app.post('/api/templates/:id/toggle-mandatory', async (req, res) => {
   const { id } = req.params;
   const template = await prisma.choreTemplate.findUnique({ where: { id } });
-  
   const updated = await prisma.choreTemplate.update({
     where: { id },
-    data: { isMandatory: !template.isMandatory }
+    data: { isMandatory: !template.isMandatory },
   });
-  
   await prisma.chore.updateMany({
     where: { templateId: id, isArchived: false },
-    data: { isMandatory: !template.isMandatory }
+    data: { isMandatory: !template.isMandatory },
   });
-  
   const templates = await prisma.choreTemplate.findMany();
   const chores = await prisma.chore.findMany({ where: { isArchived: false } });
-  
   res.json({ templates, chores });
 });
 
-// Assign a template to multiple kids
+// ── Chore Endpoints ───────────────────────────────────────────────────────────
+
+app.get('/api/chores', async (req, res) => {
+  const chores = await prisma.chore.findMany({ where: { isArchived: false } });
+  res.json(chores);
+});
+
 app.post('/api/chores/assign', async (req, res) => {
   const { templateId, kidIds } = req.body;
   const template = await prisma.choreTemplate.findUnique({ where: { id: templateId } });
   if (!template) return res.status(404).json({ error: 'Template not found' });
 
   const newChores = [];
-
   for (const kidId of kidIds) {
     const existing = await prisma.chore.findFirst({
-      where: { templateId, assignedTo: kidId, isArchived: false }
+      where: { templateId, assignedTo: kidId, isArchived: false },
     });
-
-    if (existing) {
-      continue; // skip duplicates for this kid/template pair
-    }
-
+    if (existing) continue;
     const chore = await prisma.chore.create({
       data: {
         title: template.title,
@@ -135,23 +209,24 @@ app.post('/api/chores/assign', async (req, res) => {
         assignedTo: kidId,
         completedDays: [],
         isApproved: false,
-        isArchived: false
-      }
+        isArchived: false,
+      },
     });
     newChores.push(chore);
   }
-
   res.json(newChores);
 });
 
-// Toggle a day completion for a chore
+// Toggle a day — awards/deducts points and fires notifications
 app.post('/api/chores/:id/toggle', async (req, res) => {
   const { id } = req.params;
   const { day } = req.body;
   const chore = await prisma.chore.findUnique({ where: { id } });
-  
+  if (!chore) return res.status(404).json({ error: 'Chore not found' });
+
   let newDays = [...chore.completedDays];
-  if (newDays.includes(day)) {
+  const wasCompleted = newDays.includes(day);
+  if (wasCompleted) {
     newDays = newDays.filter(d => d !== day);
   } else {
     newDays.push(day);
@@ -159,92 +234,142 @@ app.post('/api/chores/:id/toggle', async (req, res) => {
 
   const updated = await prisma.chore.update({
     where: { id },
-    data: { 
+    data: {
       completedDays: newDays,
-      isApproved: newDays.length < 4 ? false : chore.isApproved
-    }
+      isApproved: newDays.length < 4 ? false : chore.isApproved,
+    },
   });
+
+  const ptsPerDay = chorePointsPerDay(chore.baseValue);
+
+  if (!wasCompleted) {
+    // Award points for completing this day
+    await prisma.pointLedger.create({
+      data: {
+        childId: chore.assignedTo,
+        amount: ptsPerDay,
+        reason: `Completed: ${chore.title} (${day})`,
+        choreId: chore.id,
+      },
+    });
+
+    // 7-day streak bonus
+    if (newDays.length === 7) {
+      const bonus = Math.round(ptsPerDay * 0.25);
+      await prisma.pointLedger.create({
+        data: {
+          childId: chore.assignedTo,
+          amount: bonus,
+          reason: `7-day streak bonus: ${chore.title}`,
+          choreId: chore.id,
+        },
+      });
+      // Fire streak notification
+      const kid = await prisma.user.findUnique({ where: { id: chore.assignedTo } });
+      notify(
+        'streakBonus',
+        `🔥 ${kid?.name} hit a 7-day streak!`,
+        `${kid?.name} completed "${chore.title}" all 7 days — streak bonus of ${bonus} pts awarded!`,
+        `<p>🔥 <strong>${kid?.name}</strong> completed <em>${chore.title}</em> all 7 days this week!</p><p>Streak bonus: <strong>+${bonus} pts</strong></p>`,
+      ).catch(() => {});
+    } else {
+      // Regular completion notification
+      const kid = await prisma.user.findUnique({ where: { id: chore.assignedTo } });
+      notify(
+        'choreComplete',
+        `⭐ ${kid?.name} earned points!`,
+        `${kid?.name} completed "${chore.title}" and earned ${ptsPerDay} pts`,
+        `<p>⭐ <strong>${kid?.name}</strong> completed <em>${chore.title}</em> on ${day} and earned <strong>+${ptsPerDay} pts</strong>.</p>`,
+      ).catch(() => {});
+    }
+  } else {
+    // Deduct points for un-toggling
+    await prisma.pointLedger.create({
+      data: {
+        childId: chore.assignedTo,
+        amount: -ptsPerDay,
+        reason: `Unchecked: ${chore.title} (${day})`,
+        choreId: chore.id,
+      },
+    });
+    // If we're removing the 7th day, also remove the streak bonus
+    if (chore.completedDays.length === 7) {
+      const bonus = Math.round(ptsPerDay * 0.25);
+      await prisma.pointLedger.create({
+        data: {
+          childId: chore.assignedTo,
+          amount: -bonus,
+          reason: `Streak bonus reversed: ${chore.title}`,
+          choreId: chore.id,
+        },
+      });
+    }
+  }
+
   res.json(updated);
 });
 
-// Approve a chore (Parent Portal)
 app.post('/api/chores/:id/approve', async (req, res) => {
   const { id } = req.params;
   const chore = await prisma.chore.findUnique({ where: { id } });
   const updated = await prisma.chore.update({
     where: { id },
-    data: { isApproved: !chore.isApproved }
+    data: { isApproved: !chore.isApproved },
   });
   res.json(updated);
 });
 
-// Reset week for all active chores
 app.post('/api/chores/reset', async (req, res) => {
   await prisma.chore.updateMany({
     where: { isArchived: false },
-    data: { completedDays: [], isApproved: false }
+    data: { completedDays: [], isApproved: false },
   });
   const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json(allActive);
 });
 
-// Approve all eligible chores (>= 4 days completed, not yet approved)
 app.post('/api/chores/approve-all', async (req, res) => {
   const candidates = await prisma.chore.findMany({
-    where: { isArchived: false, isApproved: false }
+    where: { isArchived: false, isApproved: false },
   });
-  const eligibleIds = candidates
-    .filter(c => c.completedDays.length >= 4)
-    .map(c => c.id);
-
+  const eligibleIds = candidates.filter(c => c.completedDays.length >= 4).map(c => c.id);
   if (eligibleIds.length > 0) {
     await prisma.chore.updateMany({
       where: { id: { in: eligibleIds } },
-      data: { isApproved: true }
+      data: { isApproved: true },
     });
   }
-
   const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json({ updatedCount: eligibleIds.length, chores: allActive });
 });
 
-// Unassign a template from multiple kids
 app.post('/api/chores/unassign', async (req, res) => {
   const { templateId, kidIds } = req.body;
   if (!templateId || !Array.isArray(kidIds) || kidIds.length === 0) {
     return res.status(400).json({ error: 'templateId and kidIds are required' });
   }
-
   const result = await prisma.chore.updateMany({
-    where: {
-      templateId,
-      assignedTo: { in: kidIds },
-      isArchived: false
-    },
-    data: { isArchived: true }
+    where: { templateId, assignedTo: { in: kidIds }, isArchived: false },
+    data: { isArchived: true },
   });
-
   const remaining = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json({ removedCount: result.count, remaining });
 });
 
-// --- Payout Endpoints ---
+// ── Payout Endpoints ──────────────────────────────────────────────────────────
 
-// Get all payout history
 app.get('/api/payouts', async (req, res) => {
   const payouts = await prisma.payoutRecord.findMany({ orderBy: { timestamp: 'desc' } });
   res.json(payouts);
 });
 
-// Delete a single payout entry
 app.delete('/api/payouts/:id', async (req, res) => {
   const { id } = req.params;
   const result = await prisma.payoutRecord.deleteMany({ where: { id } });
-  if (result.count === 0) return res.status(404).json({ error: 'Payout entry not found' });
+  if (result.count === 0) return res.status(404).json({ error: 'Payout not found' });
   res.json({ deleted: result.count });
 });
 
-// Clear payout history for a child or all children
 app.delete('/api/payouts', async (req, res) => {
   const { childId } = req.query;
   const where = childId ? { childId: String(childId) } : {};
@@ -252,16 +377,14 @@ app.delete('/api/payouts', async (req, res) => {
   res.json({ deleted: result.count });
 });
 
-// Process payout for a kid
 app.post('/api/payouts/:kidId', async (req, res) => {
   const { kidId } = req.params;
   const kid = await prisma.user.findUnique({ where: { id: kidId } });
   const approvedChores = await prisma.chore.findMany({
-    where: { assignedTo: kidId, isApproved: true, isArchived: false }
+    where: { assignedTo: kidId, isApproved: true, isArchived: false },
   });
 
   const totalAmount = approvedChores.reduce((sum, c) => {
-    // Shared calculation logic with frontend
     const n = c.completedDays.length;
     let earned = 0;
     if (n === 4) earned = c.baseValue * 0.8;
@@ -275,23 +398,431 @@ app.post('/api/payouts/:kidId', async (req, res) => {
       childId: kidId,
       childName: kid.name,
       amount: Math.round(totalAmount * 100) / 100,
-      choresPaid: approvedChores.map(c => c.title)
-    }
+      choresPaid: approvedChores.map(c => c.title),
+    },
   });
 
-  // Reset chores after payout instead of archiving so they remain assigned
   await prisma.chore.updateMany({
     where: { id: { in: approvedChores.map(c => c.id) } },
-    data: { completedDays: [], isApproved: false }
+    data: { completedDays: [], isApproved: false },
   });
 
   const updatedChores = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json({ payout, updatedChores });
 });
 
-// --- OIDC OAuth helpers ---
+// ── Cash Payment Endpoints ────────────────────────────────────────────────────
 
-// OIDC discovery cache
+app.get('/api/cash-payments', async (req, res) => {
+  const { childId } = req.query;
+  const where = childId ? { childId: String(childId) } : {};
+  const payments = await prisma.cashPayment.findMany({ where, orderBy: { timestamp: 'desc' } });
+  res.json(payments);
+});
+
+app.post('/api/cash-payments', async (req, res) => {
+  const { childId, childName, amount, note } = req.body;
+  if (!childId || !childName || amount == null) {
+    return res.status(400).json({ error: 'childId, childName, and amount are required' });
+  }
+  const payment = await prisma.cashPayment.create({
+    data: {
+      childId,
+      childName,
+      amount: Math.round(parseFloat(amount) * 100) / 100,
+      note: note || null,
+    },
+  });
+  res.json(payment);
+});
+
+app.delete('/api/cash-payments/:id', async (req, res) => {
+  const { id } = req.params;
+  await prisma.cashPayment.delete({ where: { id } });
+  res.sendStatus(200);
+});
+
+// ── Rewards Endpoints ─────────────────────────────────────────────────────────
+
+app.get('/api/rewards', async (req, res) => {
+  const rewards = await prisma.rewardTemplate.findMany({ orderBy: { sortOrder: 'asc' } });
+  res.json(rewards);
+});
+
+app.post('/api/rewards', async (req, res) => {
+  const { title, description, pointCost, icon } = req.body;
+  if (!title || !pointCost) return res.status(400).json({ error: 'title and pointCost required' });
+  const count = await prisma.rewardTemplate.count();
+  const reward = await prisma.rewardTemplate.create({
+    data: { title, description: description || null, pointCost: parseInt(pointCost), icon: icon || null, isCustom: true, sortOrder: count },
+  });
+  res.json(reward);
+});
+
+app.put('/api/rewards/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, description, pointCost, isActive, icon, sortOrder } = req.body;
+  const data = {};
+  if (title !== undefined) data.title = title;
+  if (description !== undefined) data.description = description;
+  if (pointCost !== undefined) data.pointCost = parseInt(pointCost);
+  if (isActive !== undefined) data.isActive = isActive;
+  if (icon !== undefined) data.icon = icon;
+  if (sortOrder !== undefined) data.sortOrder = parseInt(sortOrder);
+  const reward = await prisma.rewardTemplate.update({ where: { id }, data });
+  res.json(reward);
+});
+
+app.delete('/api/rewards/:id', async (req, res) => {
+  const { id } = req.params;
+  await prisma.rewardTemplate.delete({ where: { id } });
+  res.sendStatus(200);
+});
+
+// ── Points Endpoints ──────────────────────────────────────────────────────────
+
+// Get point balances for all kids
+app.get('/api/points/balance', async (req, res) => {
+  const ledger = await prisma.pointLedger.findMany();
+  const balances = {};
+  for (const entry of ledger) {
+    balances[entry.childId] = (balances[entry.childId] || 0) + entry.amount;
+  }
+  res.json(balances);
+});
+
+// Get full ledger for one kid
+app.get('/api/points/ledger/:childId', async (req, res) => {
+  const { childId } = req.params;
+  const entries = await prisma.pointLedger.findMany({
+    where: { childId },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(entries);
+});
+
+// Get all point ledger entries (for bootstrap)
+app.get('/api/points/ledger', async (req, res) => {
+  const entries = await prisma.pointLedger.findMany({ orderBy: { createdAt: 'desc' } });
+  res.json(entries);
+});
+
+// Get all redemptions
+app.get('/api/points/redemptions', async (req, res) => {
+  const redemptions = await prisma.rewardRedemption.findMany({ orderBy: { timestamp: 'desc' } });
+  res.json(redemptions);
+});
+
+// Parent redeems a reward for a kid
+app.post('/api/points/redeem', async (req, res) => {
+  const { childId, rewardTemplateId } = req.body;
+  if (!childId || !rewardTemplateId) return res.status(400).json({ error: 'childId and rewardTemplateId required' });
+
+  const kid = await prisma.user.findUnique({ where: { id: childId } });
+  const reward = await prisma.rewardTemplate.findUnique({ where: { id: rewardTemplateId } });
+  if (!kid || !reward) return res.status(404).json({ error: 'Kid or reward not found' });
+
+  // Check balance
+  const ledger = await prisma.pointLedger.findMany({ where: { childId } });
+  const balance = ledger.reduce((s, e) => s + e.amount, 0);
+  if (balance < reward.pointCost) return res.status(400).json({ error: 'Insufficient points' });
+
+  // Deduct points
+  await prisma.pointLedger.create({
+    data: {
+      childId,
+      amount: -reward.pointCost,
+      reason: `Redeemed: ${reward.title}`,
+    },
+  });
+
+  const redemption = await prisma.rewardRedemption.create({
+    data: {
+      childId,
+      childName: kid.name,
+      rewardTemplateId,
+      rewardTitle: reward.title,
+      pointCost: reward.pointCost,
+    },
+  });
+
+  notify(
+    'rewardApproved',
+    `🎁 ${kid.name} redeemed a reward!`,
+    `${kid.name} redeemed "${reward.title}" for ${reward.pointCost} pts`,
+    `<p>🎁 <strong>${kid.name}</strong> redeemed <em>${reward.title}</em> for <strong>${reward.pointCost} pts</strong>.</p>`,
+  ).catch(() => {});
+
+  res.json(redemption);
+});
+
+// Delete a redemption and refund points
+app.delete('/api/points/redemptions/:id', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+
+  await prisma.pointLedger.create({
+    data: {
+      childId: redemption.childId,
+      amount: redemption.pointCost,
+      reason: `Refund: ${redemption.rewardTitle}`,
+    },
+  });
+
+  await prisma.rewardRedemption.delete({ where: { id } });
+  res.json({ refunded: redemption.pointCost });
+});
+
+// ── Redemption Requests (kid asks parent) ─────────────────────────────────────
+
+app.get('/api/redemption-requests', async (req, res) => {
+  const requests = await prisma.redemptionRequest.findMany({ orderBy: { timestamp: 'desc' } });
+  res.json(requests);
+});
+
+app.post('/api/redemption-requests', async (req, res) => {
+  const { childId, childName, rewardTemplateId } = req.body;
+  if (!childId || !rewardTemplateId) return res.status(400).json({ error: 'childId and rewardTemplateId required' });
+
+  // Check balance first
+  const ledger = await prisma.pointLedger.findMany({ where: { childId } });
+  const balance = ledger.reduce((s, e) => s + e.amount, 0);
+  const reward = await prisma.rewardTemplate.findUnique({ where: { id: rewardTemplateId } });
+  if (!reward) return res.status(404).json({ error: 'Reward not found' });
+  if (balance < reward.pointCost) return res.status(400).json({ error: 'Insufficient points' });
+
+  // Cancel any existing pending request for same kid+reward
+  await prisma.redemptionRequest.updateMany({
+    where: { childId, rewardTemplateId, status: 'pending' },
+    data: { status: 'cancelled' },
+  });
+
+  const request = await prisma.redemptionRequest.create({
+    data: {
+      childId,
+      childName: childName || 'Unknown',
+      rewardTemplateId,
+      rewardTitle: reward.title,
+      pointCost: reward.pointCost,
+    },
+  });
+
+  notify(
+    'rewardRequest',
+    `🎁 ${childName} wants a reward`,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts). Open the app to approve.`,
+    `<p>🎁 <strong>${childName}</strong> wants to redeem <em>${reward.title}</em> (<strong>${reward.pointCost} pts</strong>).</p><p>Open the parent portal to approve.</p>`,
+  ).catch(() => {});
+
+  res.json(request);
+});
+
+app.put('/api/redemption-requests/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const request = await prisma.redemptionRequest.findUnique({ where: { id } });
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+
+  const kid = await prisma.user.findUnique({ where: { id: request.childId } });
+  const reward = await prisma.rewardTemplate.findUnique({ where: { id: request.rewardTemplateId } });
+
+  // Check balance
+  const ledger = await prisma.pointLedger.findMany({ where: { childId: request.childId } });
+  const balance = ledger.reduce((s, e) => s + e.amount, 0);
+  if (balance < request.pointCost) return res.status(400).json({ error: 'Insufficient points' });
+
+  // Deduct + log redemption
+  await prisma.pointLedger.create({
+    data: { childId: request.childId, amount: -request.pointCost, reason: `Redeemed: ${request.rewardTitle}` },
+  });
+  const redemption = await prisma.rewardRedemption.create({
+    data: {
+      childId: request.childId,
+      childName: request.childName,
+      rewardTemplateId: request.rewardTemplateId,
+      rewardTitle: request.rewardTitle,
+      pointCost: request.pointCost,
+    },
+  });
+
+  await prisma.redemptionRequest.update({ where: { id }, data: { status: 'approved' } });
+  res.json({ redemption });
+});
+
+app.put('/api/redemption-requests/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  await prisma.redemptionRequest.update({ where: { id }, data: { status: 'rejected' } });
+  res.json({ ok: true });
+});
+
+// ── Reward Requests (kid suggests a reward idea) ──────────────────────────────
+
+app.get('/api/reward-requests', async (req, res) => {
+  const requests = await prisma.rewardRequest.findMany({ orderBy: { createdAt: 'desc' } });
+  res.json(requests);
+});
+
+app.post('/api/reward-requests', async (req, res) => {
+  const { childId, childName, title, description } = req.body;
+  if (!childId || !title) return res.status(400).json({ error: 'childId and title required' });
+
+  const request = await prisma.rewardRequest.create({
+    data: { childId, childName: childName || 'Unknown', title, description: description || null },
+  });
+
+  notify(
+    'rewardIdea',
+    `💡 New reward idea from ${childName}`,
+    `${childName} suggested: "${title}" — review it in the parent portal.`,
+    `<p>💡 <strong>${childName}</strong> suggested a new reward: <em>${title}</em></p>${description ? `<p>${description}</p>` : ''}<p>Review and approve it in the parent portal.</p>`,
+  ).catch(() => {});
+
+  res.json(request);
+});
+
+app.put('/api/reward-requests/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const { pointCost } = req.body;
+  if (!pointCost) return res.status(400).json({ error: 'pointCost required' });
+
+  const request = await prisma.rewardRequest.update({
+    where: { id },
+    data: { status: 'approved', pointCost: parseInt(pointCost) },
+  });
+
+  const count = await prisma.rewardTemplate.count();
+  const reward = await prisma.rewardTemplate.create({
+    data: {
+      title: request.title,
+      description: request.description,
+      pointCost: request.pointCost,
+      isCustom: true,
+      sortOrder: count,
+    },
+  });
+
+  res.json({ request, reward });
+});
+
+app.put('/api/reward-requests/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  await prisma.rewardRequest.update({ where: { id }, data: { status: 'rejected' } });
+  res.json({ ok: true });
+});
+
+// ── Notification Settings ─────────────────────────────────────────────────────
+
+app.get('/api/notifications/settings', async (req, res) => {
+  const ns = await prisma.notificationSettings.findUnique({ where: { id: 'singleton' } });
+  if (!ns) return res.json({
+    pushoverAppToken: '', pushoverUserKey: '', pushoverEnabled: false,
+    smtpHost: '', smtpPort: 587, smtpUser: '', smtpFrom: '', smtpEnabled: false,
+    notifyChoreComplete: true, notifyStreakBonus: true, notifyRewardRequest: true,
+    notifyRewardIdea: true, notifyWeeklyReset: true, notifyRewardApproved: true,
+    pushoverTokenSet: false, smtpPasswordSet: false,
+  });
+  res.json({
+    ...ns,
+    pushoverAppToken: ns.pushoverAppToken ? '●●●● saved' : '',
+    pushoverTokenSet: !!ns.pushoverAppToken,
+    smtpPassword: ns.smtpPassword ? '●●●● saved' : '',
+    smtpPasswordSet: !!ns.smtpPassword,
+  });
+});
+
+app.put('/api/notifications/settings', async (req, res) => {
+  const { currentPassword, ...fields } = req.body;
+
+  // Verify parent password
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+
+  const data = {};
+  const allowed = [
+    'pushoverEnabled', 'smtpEnabled', 'smtpHost', 'smtpPort', 'smtpUser', 'smtpFrom',
+    'notifyChoreComplete', 'notifyStreakBonus', 'notifyRewardRequest',
+    'notifyRewardIdea', 'notifyWeeklyReset', 'notifyRewardApproved',
+  ];
+  for (const key of allowed) {
+    if (fields[key] !== undefined) data[key] = fields[key];
+  }
+  if (fields.pushoverAppToken?.trim()) data.pushoverAppToken = fields.pushoverAppToken.trim();
+  if (fields.pushoverUserKey?.trim()) data.pushoverUserKey = fields.pushoverUserKey.trim();
+  if (fields.smtpPassword?.trim()) data.smtpPassword = fields.smtpPassword.trim();
+
+  const ns = await prisma.notificationSettings.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', ...data },
+    update: data,
+  });
+  res.json({ ok: true });
+});
+
+app.post('/api/notifications/test-pushover', async (req, res) => {
+  const { currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+
+  try {
+    const ns = await getNotifSettings();
+    if (!ns?.pushoverAppToken || !ns?.pushoverUserKey) {
+      return res.status(400).json({ error: 'Pushover not configured.' });
+    }
+    const r = await fetch('https://api.pushover.net/1/messages.json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: ns.pushoverAppToken,
+        user: ns.pushoverUserKey,
+        title: '🧪 Chore App Test',
+        message: 'Pushover notifications are working!',
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    const data = await r.json();
+    if (data.status === 1) return res.json({ ok: true });
+    return res.status(400).json({ error: data.errors?.join(', ') || 'Pushover error' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/notifications/test-email', async (req, res) => {
+  const { currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+
+  try {
+    const ns = await getNotifSettings();
+    if (!ns?.smtpHost || !ns?.smtpUser || !ns?.smtpFrom) {
+      return res.status(400).json({ error: 'SMTP not configured.' });
+    }
+    const transporter = nodemailer.createTransport({
+      host: ns.smtpHost,
+      port: ns.smtpPort || 587,
+      secure: (ns.smtpPort || 587) === 465,
+      auth: { user: ns.smtpUser, pass: ns.smtpPassword },
+    });
+    await transporter.sendMail({
+      from: ns.smtpFrom,
+      to: ns.smtpFrom,
+      subject: '🧪 Chore App Test Email',
+      html: '<p>Email notifications are working!</p>',
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── OIDC OAuth helpers ────────────────────────────────────────────────────────
+
 let _oidcCache = null, _oidcCacheExpiry = 0;
 async function discoverOidc(issuer) {
   if (_oidcCache && Date.now() < _oidcCacheExpiry) return _oidcCache;
@@ -303,9 +834,8 @@ async function discoverOidc(issuer) {
   return _oidcCache;
 }
 
-// OAuth state store
 const _oauthStates = new Map();
-setInterval(() => { const now = Date.now(); for (const [k,v] of _oauthStates) if (v < now) _oauthStates.delete(k); }, 600_000);
+setInterval(() => { const now = Date.now(); for (const [k, v] of _oauthStates) if (v < now) _oauthStates.delete(k); }, 600_000);
 
 function getAppUrl(req) {
   const cfg = process.env.APP_URL; if (cfg) return cfg.replace(/\/$/, '');
@@ -313,15 +843,13 @@ function getAppUrl(req) {
   return `${proto}://${req.headers['host'] || 'localhost:8080'}`;
 }
 
-// --- Parent Endpoints ---
+// ── Parent Endpoints ──────────────────────────────────────────────────────────
 
-// Status — returns whether default credentials have been changed (no auth required)
 app.get('/api/parent/status', async (req, res) => {
   const parent = await prisma.parent.findFirst();
   res.json({ hasChanged: parent?.hasChanged ?? false });
 });
 
-// GET /api/parent/oauth/login — initiates the OAuth flow
 app.get('/api/parent/oauth/login', async (req, res) => {
   const parent = await prisma.parent.findFirst();
   const issuer = parent?.oauthIssuer, clientId = parent?.oauthClientId;
@@ -338,12 +866,11 @@ app.get('/api/parent/oauth/login', async (req, res) => {
   }
 });
 
-// GET /api/parent/oauth/callback — handles Google's redirect back
 app.get('/api/parent/oauth/callback', async (req, res) => {
   const appUrl = getAppUrl(req);
   const { code, state, error } = req.query;
   if (error) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`OAuth error: ${error}`)}`);
-  if (!code || !state || !_oauthStates.has(state)) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('Invalid or expired OAuth state. Please try again.')}`);
+  if (!code || !state || !_oauthStates.has(state)) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('Invalid or expired OAuth state.')}`);
   _oauthStates.delete(state);
   const parent = await prisma.parent.findFirst();
   const { oauthIssuer: issuer, oauthClientId: clientId, oauthClientSecret: clientSecret } = parent || {};
@@ -363,10 +890,8 @@ app.get('/api/parent/oauth/callback', async (req, res) => {
     if (!email) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth provider did not return an email.')}`);
     const allowed = (parent.allowedEmails || []).map(e => e.toLowerCase());
     if (!allowed.includes(email.toLowerCase())) {
-      console.log(`[auth] OAuth denied for ${email}`);
-      return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`${email} is not authorized as a parent. Add this email in OAuth Settings.`)}`);
+      return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`${email} is not authorized as a parent.`)}`);
     }
-    console.log(`[auth] OAuth sign-in by ${email}`);
     res.redirect(`${appUrl}/?parent_authed=1`);
   } catch (err) {
     console.error('[oauth] callback:', err.message);
@@ -374,13 +899,11 @@ app.get('/api/parent/oauth/callback', async (req, res) => {
   }
 });
 
-// GET /api/parent/oauth/settings — returns current config (secret masked)
 app.get('/api/parent/oauth/settings', async (req, res) => {
   const parent = await prisma.parent.findFirst();
   res.json({ oauthIssuer: parent?.oauthIssuer || '', oauthClientId: parent?.oauthClientId || '', oauthClientSecretSet: !!(parent?.oauthClientSecret), allowedEmails: parent?.allowedEmails || [] });
 });
 
-// POST /api/parent/oauth/settings — update OAuth config (requires password)
 app.post('/api/parent/oauth/settings', async (req, res) => {
   const { currentPassword, oauthIssuer, oauthClientId, oauthClientSecret } = req.body;
   const parent = await prisma.parent.findFirst();
@@ -392,17 +915,15 @@ app.post('/api/parent/oauth/settings', async (req, res) => {
   if (oauthClientId !== undefined) data.oauthClientId = oauthClientId.trim() || null;
   if (oauthClientSecret?.trim()) data.oauthClientSecret = oauthClientSecret.trim();
   await prisma.parent.update({ where: { id: parent.id }, data });
-  _oidcCache = null; // bust cache when config changes
+  _oidcCache = null;
   res.json({ success: true });
 });
 
-// Get allowed CF emails
 app.get('/api/parent/cf-emails', async (req, res) => {
   const parent = await prisma.parent.findFirst();
   res.json({ emails: parent?.allowedEmails || [] });
 });
 
-// Add an email to the allowed CF list
 app.post('/api/parent/cf-emails', async (req, res) => {
   const { email, currentPassword } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Invalid email.' });
@@ -411,17 +932,11 @@ app.post('/api/parent/cf-emails', async (req, res) => {
   const isValid = await bcrypt.compare(currentPassword, parent.password);
   if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
   const normalized = email.trim().toLowerCase();
-  if (parent.allowedEmails.map(e => e.toLowerCase()).includes(normalized)) {
-    return res.json({ emails: parent.allowedEmails }); // already there
-  }
-  const updated = await prisma.parent.update({
-    where: { id: parent.id },
-    data: { allowedEmails: { push: email.trim() } },
-  });
+  if (parent.allowedEmails.map(e => e.toLowerCase()).includes(normalized)) return res.json({ emails: parent.allowedEmails });
+  const updated = await prisma.parent.update({ where: { id: parent.id }, data: { allowedEmails: { push: email.trim() } } });
   res.json({ emails: updated.allowedEmails });
 });
 
-// Remove an email from the allowed CF list
 app.delete('/api/parent/cf-emails/:email', async (req, res) => {
   const { email } = req.params;
   const { currentPassword } = req.body;
@@ -429,14 +944,10 @@ app.delete('/api/parent/cf-emails/:email', async (req, res) => {
   if (!parent) return res.status(404).json({ error: 'No parent found.' });
   const isValid = await bcrypt.compare(currentPassword, parent.password);
   if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
-  const updated = await prisma.parent.update({
-    where: { id: parent.id },
-    data: { allowedEmails: parent.allowedEmails.filter(e => e.toLowerCase() !== email.toLowerCase()) },
-  });
+  const updated = await prisma.parent.update({ where: { id: parent.id }, data: { allowedEmails: parent.allowedEmails.filter(e => e.toLowerCase() !== email.toLowerCase()) } });
   res.json({ emails: updated.allowedEmails });
 });
 
-// Login
 app.post('/api/parent/login', async (req, res) => {
   const { username, password } = req.body;
   const parent = await prisma.parent.findUnique({ where: { username } });
@@ -445,115 +956,59 @@ app.post('/api/parent/login', async (req, res) => {
   res.json({ success: isValid, hasChanged: parent.hasChanged });
 });
 
-// Get current parent (for checking if set)
 app.get('/api/parent', async (req, res) => {
   const parent = await prisma.parent.findFirst();
   if (!parent) return res.status(404).json({ error: 'No parent set' });
   res.json({ username: parent.username });
 });
 
-// Set new credentials — requires current password to prevent unauthorized changes
 app.post('/api/parent/set', async (req, res) => {
   const { username, password, currentPassword } = req.body;
   const parent = await prisma.parent.findFirst();
-  // If a parent record exists, verify the current password before allowing change
   if (parent && currentPassword !== undefined) {
     const isValid = await bcrypt.compare(currentPassword, parent.password);
     if (!isValid) return res.status(403).json({ success: false, error: 'Current password is incorrect.' });
   }
   const hashedPassword = await bcrypt.hash(password, 10);
   if (parent) {
-    await prisma.parent.update({
-      where: { id: parent.id },
-      data: { username, password: hashedPassword, hasChanged: true }
-    });
+    await prisma.parent.update({ where: { id: parent.id }, data: { username, password: hashedPassword, hasChanged: true } });
   } else {
-    await prisma.parent.create({
-      data: { username, password: hashedPassword, hasChanged: true }
-    });
+    await prisma.parent.create({ data: { username, password: hashedPassword, hasChanged: true } });
   }
   res.json({ success: true });
 });
 
-// Emergency reset — requires PARENT_RESET_CODE env var (set in docker-compose.yml)
 app.post('/api/parent/reset', async (req, res) => {
   const { resetCode, username, password } = req.body;
   const expectedCode = process.env.PARENT_RESET_CODE;
-  if (!expectedCode) {
-    return res.status(503).json({ success: false, error: 'Reset code not configured on this server.' });
-  }
-  if (!resetCode || resetCode !== expectedCode) {
-    return res.status(403).json({ success: false, error: 'Invalid reset code.' });
-  }
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Username and password are required.' });
-  }
+  if (!expectedCode) return res.status(503).json({ success: false, error: 'Reset code not configured.' });
+  if (!resetCode || resetCode !== expectedCode) return res.status(403).json({ success: false, error: 'Invalid reset code.' });
+  if (!username || !password) return res.status(400).json({ success: false, error: 'Username and password are required.' });
   const hashedPassword = await bcrypt.hash(password, 10);
   const parent = await prisma.parent.findFirst();
   if (parent) {
-    await prisma.parent.update({
-      where: { id: parent.id },
-      data: { username, password: hashedPassword, hasChanged: true }
-    });
+    await prisma.parent.update({ where: { id: parent.id }, data: { username, password: hashedPassword, hasChanged: true } });
   } else {
-    await prisma.parent.create({
-      data: { username, password: hashedPassword, hasChanged: true }
-    });
+    await prisma.parent.create({ data: { username, password: hashedPassword, hasChanged: true } });
   }
-  console.log('[security] Parent credentials reset via emergency reset code.');
+  console.log('[security] Parent credentials reset via emergency code.');
   res.json({ success: true });
 });
 
-// --- Cash Payment Endpoints ---
-
-// Get all cash payments (optionally filtered by childId)
-app.get('/api/cash-payments', async (req, res) => {
-  const { childId } = req.query;
-  const where = childId ? { childId: String(childId) } : {};
-  const payments = await prisma.cashPayment.findMany({ where, orderBy: { timestamp: 'desc' } });
-  res.json(payments);
-});
-
-// Log a new cash payment
-app.post('/api/cash-payments', async (req, res) => {
-  const { childId, childName, amount, note } = req.body;
-  if (!childId || !childName || amount == null) {
-    return res.status(400).json({ error: 'childId, childName, and amount are required' });
-  }
-  const payment = await prisma.cashPayment.create({
-    data: {
-      childId,
-      childName,
-      amount: Math.round(parseFloat(amount) * 100) / 100,
-      note: note || null,
-    },
-  });
-  res.json(payment);
-});
-
-// Delete a cash payment entry
-app.delete('/api/cash-payments/:id', async (req, res) => {
-  const { id } = req.params;
-  await prisma.cashPayment.delete({ where: { id } });
-  res.sendStatus(200);
-});
-
-// --- Auto Weekly Close-Out (Sunday midnight) ---
-// Order: approve all eligible → payout each kid → reset chores
+// ── Auto Weekly Close-Out ─────────────────────────────────────────────────────
 
 async function runWeeklyCloseOut() {
   console.log('[cron] Starting weekly close-out...');
 
-  // 1. Approve all eligible chores (>= 4 days, not yet approved)
   const candidates = await prisma.chore.findMany({ where: { isArchived: false, isApproved: false } });
   const eligibleIds = candidates.filter(c => c.completedDays.length >= 4).map(c => c.id);
   if (eligibleIds.length > 0) {
     await prisma.chore.updateMany({ where: { id: { in: eligibleIds } }, data: { isApproved: true } });
-    console.log(`[cron] Approved ${eligibleIds.length} chore(s).`);
   }
 
-  // 2. Process payout for each kid who has approved chores
   const kids = await prisma.user.findMany({ where: { role: 'child' } });
+  const summaryLines = [];
+
   for (const kid of kids) {
     const approvedChores = await prisma.chore.findMany({
       where: { assignedTo: kid.id, isApproved: true, isArchived: false },
@@ -583,19 +1038,30 @@ async function runWeeklyCloseOut() {
       data: { completedDays: [], isApproved: false },
     });
 
+    // Get point balance for summary
+    const ledger = await prisma.pointLedger.findMany({ where: { childId: kid.id } });
+    const pts = ledger.reduce((s, e) => s + e.amount, 0);
+    summaryLines.push(`${kid.name}: $${totalAmount.toFixed(2)} earned, ${pts} pts balance`);
     console.log(`[cron] Paid out $${totalAmount.toFixed(2)} to ${kid.name}.`);
   }
 
-  // 3. Reset any remaining unapproved chores
   await prisma.chore.updateMany({
     where: { isArchived: false },
     data: { completedDays: [], isApproved: false },
   });
 
+  if (summaryLines.length > 0) {
+    notify(
+      'weeklyReset',
+      '📅 Weekly close-out complete',
+      `New week started.\n${summaryLines.join('\n')}`,
+      `<h2>📅 Weekly Close-Out Complete</h2><ul>${summaryLines.map(l => `<li>${l}</li>`).join('')}</ul>`,
+    ).catch(() => {});
+  }
+
   console.log('[cron] Weekly close-out complete.');
 }
 
-// Schedule: Sunday at midnight (00:00)
 cron.schedule('0 0 * * 0', runWeeklyCloseOut, { timezone: 'America/Chicago' });
 
 app.listen(PORT, () => {

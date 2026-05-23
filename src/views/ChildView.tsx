@@ -1,9 +1,14 @@
-import { CheckCircle2, Circle, AlertCircle } from 'lucide-react';
-import type { User, DayOfWeek } from '../types';
+import { useState, useEffect } from 'react';
+import { CheckCircle2, Circle, AlertCircle, Star } from 'lucide-react';
+import type { User, DayOfWeek, RewardTemplate, PointLedgerEntry, RedemptionRequest } from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { DAYS, btnBase, btnPress, cardSurface } from '../lib/constants';
 import { getChoreEarnedAmount } from '../lib/earnings';
 import { ChoreProgressRows } from '../components/ChoreProgressRows';
+import { PointsBadge } from '../components/PointsBadge';
+import { PointsDailyChart } from '../components/PointsDailyChart';
+import { RewardsCatalog } from '../components/RewardsCatalog';
+import { SuggestRewardForm } from '../components/SuggestRewardForm';
 
 interface ChildViewProps {
   kids: User[];
@@ -14,6 +19,39 @@ interface ChildViewProps {
   weekLabel: string;
   activeKidStats: KidStats;
   onToggleDay: (choreId: string, day: DayOfWeek) => void;
+  // Points & Rewards
+  kidBalance: number;
+  ledger: PointLedgerEntry[];
+  rewards: RewardTemplate[];
+  redemptionRequests: RedemptionRequest[];
+  onRequestRedemption: (childId: string, childName: string, rewardTemplateId: string) => Promise<void>;
+  onSubmitRewardIdea: (childId: string, childName: string, title: string, description?: string) => Promise<void>;
+}
+
+function useGoalRewardIds(kidId: string) {
+  const storageKey = `goal_rewards_${kidId}`;
+  const [goalRewardIds, setGoalRewardIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(goalRewardIds));
+    } catch { /* ignore */ }
+  }, [goalRewardIds, storageKey]);
+
+  const toggleGoal = (id: string) => {
+    setGoalRewardIds(prev =>
+      prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id],
+    );
+  };
+
+  return { goalRewardIds, toggleGoal };
 }
 
 export function ChildView({
@@ -25,7 +63,30 @@ export function ChildView({
   weekLabel,
   activeKidStats,
   onToggleDay,
+  kidBalance,
+  ledger,
+  rewards,
+  redemptionRequests,
+  onRequestRedemption,
+  onSubmitRewardIdea,
 }: ChildViewProps) {
+  const { goalRewardIds, toggleGoal } = useGoalRewardIds(activeKidId);
+  const activeKid = kids.find(k => k.id === activeKidId);
+
+  const activeRewards = rewards.filter(r => r.isActive);
+  const cheapestAffordable = activeRewards
+    .filter(r => kidBalance >= r.pointCost)
+    .sort((a, b) => a.pointCost - b.pointCost)[0];
+
+  // Points earned today (for the +today indicator)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const todayPoints = ledger
+    .filter(e => e.childId === activeKidId && e.amount > 0 && new Date(e.createdAt) >= today && new Date(e.createdAt) < tomorrow)
+    .reduce((sum, e) => sum + e.amount, 0);
+
   return (
     <div className="animate-in slide-in-from-right-4 mx-auto max-w-6xl space-y-6 duration-500">
       <p className="text-center text-xs font-black uppercase tracking-widest text-slate-700">
@@ -50,16 +111,45 @@ export function ChildView({
         ))}
       </div>
 
+      {/* Points balance banner */}
+      {activeKidId && (
+        <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between rounded-3xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Star size={22} className="text-amber-500" />
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-amber-700">
+                {activeKid?.name}&apos;s Points
+              </p>
+              <p className="text-xs text-amber-600">Earn points every time you complete a chore!</p>
+            </div>
+          </div>
+          <PointsBadge points={kidBalance} todayPoints={todayPoints} size="lg" />
+        </div>
+      )}
+
+      {/* Nudge banner when they can afford something */}
+      {cheapestAffordable && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm font-bold text-emerald-700">
+          🎉 You have enough for <strong>{cheapestAffordable.title}</strong>! Ask a parent to redeem it.
+        </div>
+      )}
+
       {/* Progress overview card */}
       {activeKidId && activeKidStats.active.length > 0 && (
         <div className={`${cardSurface} p-6 md:p-8`}>
           <h3 className="mb-6 text-xl font-black text-black">
-            {kids.find(k => k.id === activeKidId)?.name ?? 'My'}&apos;s progress
+            {activeKid?.name ?? 'My'}&apos;s progress
           </h3>
           <ChoreProgressRows
             choreList={activeKidStats.active}
             showParentApprove={false}
           />
+          {/* Daily points chart */}
+          {activeKidId && (
+            <div className="mt-6">
+              <PointsDailyChart ledger={ledger} childId={activeKidId} />
+            </div>
+          )}
         </div>
       )}
 
@@ -90,6 +180,7 @@ export function ChildView({
             {activeKidStats.active.map(chore => {
               const isDone = chore.completedDays.includes(selectedDay);
               const earned = getChoreEarnedAmount(chore.completedDays.length, chore.baseValue);
+              const ptsPerDay = Math.round(chore.baseValue * 4);
               return (
                 <button
                   key={chore.id}
@@ -123,6 +214,10 @@ export function ChildView({
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
                         <span>Value: ${chore.baseValue.toFixed(2)}</span>
                         <span>Current: ${earned.toFixed(2)}</span>
+                        <span className="flex items-center gap-1 text-amber-600">
+                          <span>⭐</span>
+                          <span>+{ptsPerDay} pts/day</span>
+                        </span>
                       </div>
                       <div className="mt-2 flex gap-1">
                         {[...Array(7)].map((_, i) => (
@@ -153,6 +248,44 @@ export function ChildView({
           </div>
         </div>
       </div>
+
+      {/* Rewards catalog */}
+      {activeKidId && activeRewards.length > 0 && (
+        <div className={`${cardSurface} p-6 md:p-8`}>
+          <div className="mb-5 flex items-center gap-2">
+            <span className="text-2xl">🎁</span>
+            <div>
+              <h3 className="text-xl font-black text-slate-900">Rewards</h3>
+              <p className="text-sm text-slate-500">Tap ✨ to save a goal. Tap <strong>Ask Parent</strong> to request.</p>
+            </div>
+          </div>
+          <RewardsCatalog
+            rewards={rewards}
+            balance={kidBalance}
+            kidId={activeKidId}
+            kidName={activeKid?.name ?? ''}
+            redemptionRequests={redemptionRequests}
+            goalRewardIds={goalRewardIds}
+            onToggleGoal={toggleGoal}
+            onRequestRedemption={rewardId =>
+              onRequestRedemption(activeKidId, activeKid?.name ?? '', rewardId)
+            }
+          />
+        </div>
+      )}
+
+      {/* Suggest a reward */}
+      {activeKidId && (
+        <div className="flex justify-center">
+          <SuggestRewardForm
+            kidId={activeKidId}
+            kidName={activeKid?.name ?? ''}
+            onSubmit={(title, description) =>
+              onSubmitRewardIdea(activeKidId, activeKid?.name ?? '', title, description)
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }
