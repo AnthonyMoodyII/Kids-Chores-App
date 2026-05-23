@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X } from 'lucide-react';
+import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare } from 'lucide-react';
 import type { User, Chore, ChoreTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
 
@@ -26,9 +26,16 @@ export function ManageTab({
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
   const [newTemplateValue, setNewTemplateValue] = useState('5.00');
   const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  // Multi-select for chore templates
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
+  // Multi-select for kids (assignment targets)
   const [selectedKidIds, setSelectedKidIds] = useState<Set<string>>(new Set());
+  // Kid whose chores are being viewed
   const [selectedViewKidId, setSelectedViewKidId] = useState<string | null>(null);
+
+  const [assigning, setAssigning] = useState(false);
+  const [unassigning, setUnassigning] = useState(false);
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const selectedKid = kids.find(k => k.id === selectedViewKidId) ?? null;
@@ -36,7 +43,36 @@ export function ManageTab({
     ? chores.filter(c => c.assignedTo === selectedViewKidId && !c.isArchived)
     : [];
 
+  const selectedTemplates = choreTemplates.filter(t => selectedTemplateIds.has(t.id));
+
+  const canAssign = selectedTemplateIds.size > 0 && selectedKidIds.size > 0;
+
+  // For a given kid, how many of the selected templates are already assigned
+  const alreadyAssignedCount = (kidId: string) =>
+    selectedTemplates.filter(t =>
+      chores.some(c => c.templateId === t.id && c.assignedTo === kidId && !c.isArchived),
+    ).length;
+
   // ── Handlers ─────────────────────────────────────────────────────────────
+  const toggleTemplate = (id: string) =>
+    setSelectedTemplateIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+
+  const toggleKid = (id: string) =>
+    setSelectedKidIds(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+
+  const selectAllTemplates = () =>
+    setSelectedTemplateIds(new Set(choreTemplates.map(t => t.id)));
+
+  const clearTemplates = () => setSelectedTemplateIds(new Set());
+
   const handleAddKid = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKidName.trim()) return;
@@ -91,7 +127,6 @@ export function ManageTab({
       setChoreTemplates(prev => [...prev, t]);
       setNewTemplateTitle('');
       setNewTemplateIsMandatory(false);
-      if (!selectedTemplateId) setSelectedTemplateId(t.id);
     } catch (error) {
       console.error(error);
     }
@@ -111,7 +146,7 @@ export function ManageTab({
       const response = await fetch(`${API_URL}/api/templates/${templateId}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete template');
       setChoreTemplates(prev => prev.filter(t => t.id !== templateId));
-      if (selectedTemplateId === templateId) setSelectedTemplateId(null);
+      setSelectedTemplateIds(prev => { const n = new Set(prev); n.delete(templateId); return n; });
     } catch (error) {
       console.error(error);
     }
@@ -129,67 +164,76 @@ export function ManageTab({
     }
   };
 
-  const toggleKidSelect = (kidId: string) => {
-    setSelectedKidIds(prev => {
-      const n = new Set(prev);
-      if (n.has(kidId)) n.delete(kidId); else n.add(kidId);
-      return n;
-    });
-  };
-
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTemplateId || selectedKidIds.size === 0) return;
-    const toAssign = Array.from(selectedKidIds).filter(
-      kidId => !chores.some(c => c.templateId === selectedTemplateId && c.assignedTo === kidId && !c.isArchived),
-    );
-    if (toAssign.length === 0) return;
+    if (!canAssign) return;
+    setAssigning(true);
     try {
-      const response = await fetch(`${API_URL}/api/chores/assign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: selectedTemplateId, kidIds: toAssign }),
-      });
-      if (!response.ok) throw new Error('Failed to assign chores');
-      const assigned = await response.json();
-      if (assigned.length > 0) setChores(prev => [...prev, ...assigned]);
+      const kidIdsArr = Array.from(selectedKidIds);
+      let allAssigned: Chore[] = [];
+      for (const templateId of selectedTemplateIds) {
+        const toAssign = kidIdsArr.filter(
+          kidId => !chores.some(c => c.templateId === templateId && c.assignedTo === kidId && !c.isArchived),
+        );
+        if (toAssign.length === 0) continue;
+        const res = await fetch(`${API_URL}/api/chores/assign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId, kidIds: toAssign }),
+        });
+        if (!res.ok) throw new Error('Failed to assign');
+        const assigned = await res.json();
+        allAssigned = [...allAssigned, ...assigned];
+      }
+      if (allAssigned.length > 0) setChores(prev => [...prev, ...allAssigned]);
+      setSelectedTemplateIds(new Set());
       setSelectedKidIds(new Set());
     } catch (error) {
       console.error('handleAssign error', error);
+    } finally {
+      setAssigning(false);
     }
   };
 
   const handleUnassign = async () => {
-    if (!selectedTemplateId || selectedKidIds.size === 0) return;
-    const toUnassign = Array.from(selectedKidIds).filter(kidId =>
-      chores.some(c => c.templateId === selectedTemplateId && c.assignedTo === kidId && !c.isArchived),
-    );
-    if (toUnassign.length === 0) return;
+    if (!canAssign) return;
+    setUnassigning(true);
     try {
-      const response = await fetch(`${API_URL}/api/chores/unassign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ templateId: selectedTemplateId, kidIds: toUnassign }),
-      });
-      if (!response.ok) throw new Error('Failed to unassign chores');
-      const result = await response.json();
-      setChores(result.remaining || []);
+      const kidIdsArr = Array.from(selectedKidIds);
+      let remaining = chores;
+      for (const templateId of selectedTemplateIds) {
+        const toUnassign = kidIdsArr.filter(kidId =>
+          remaining.some(c => c.templateId === templateId && c.assignedTo === kidId && !c.isArchived),
+        );
+        if (toUnassign.length === 0) continue;
+        const res = await fetch(`${API_URL}/api/chores/unassign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ templateId, kidIds: toUnassign }),
+        });
+        if (!res.ok) throw new Error('Failed to unassign');
+        const result = await res.json();
+        remaining = result.remaining || [];
+      }
+      setChores(remaining);
+      setSelectedTemplateIds(new Set());
       setSelectedKidIds(new Set());
     } catch (error) {
       console.error('handleUnassign error', error);
+    } finally {
+      setUnassigning(false);
     }
   };
 
-  // Unassign a single chore from the kid chores panel
   const handleUnassignSingle = async (templateId: string, kidId: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/chores/unassign`, {
+      const res = await fetch(`${API_URL}/api/chores/unassign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ templateId, kidIds: [kidId] }),
       });
-      if (!response.ok) throw new Error('Failed to unassign chore');
-      const result = await response.json();
+      if (!res.ok) throw new Error('Failed to unassign chore');
+      const result = await res.json();
       setChores(result.remaining || []);
     } catch (error) {
       console.error('handleUnassignSingle error', error);
@@ -198,22 +242,308 @@ export function ManageTab({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* ── 3-column grid ─────────────────────────────────────────────────── */}
+
+      {/* ── Top row: Library + Assignment workspace ────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-        {/* ── Kids ── */}
-        <section className={`${cardSurface} p-6 md:p-8`}>
-          <h3 className="text-lg font-black mb-6 flex items-center gap-3 text-slate-900">
+        {/* ── Chore library (multi-select) ── */}
+        <section className={`${cardSurface} p-6 md:p-8 xl:col-span-2`}>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-lg font-black flex items-center gap-3 text-slate-900">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
+                <ListChecks size={22} />
+              </span>
+              Chore library
+            </h3>
+            <div className="flex items-center gap-2">
+              {selectedTemplateIds.size > 0 && (
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-violet-700">
+                  {selectedTemplateIds.size} selected
+                </span>
+              )}
+              {choreTemplates.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={selectAllTemplates}
+                    className={`${btnBase} ${btnPress} rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-wide text-slate-500 hover:border-violet-200 hover:text-violet-600`}
+                  >
+                    Select all
+                  </button>
+                  {selectedTemplateIds.size > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearTemplates}
+                      className={`${btnBase} ${btnPress} rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black uppercase tracking-wide text-slate-400 hover:text-rose-500`}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Chore cards grid */}
+          {choreTemplates.length === 0 ? (
+            <p className="py-8 text-center text-sm italic text-slate-400">No chores in the library yet — add one below.</p>
+          ) : (
+            <div className="mb-6 grid gap-2.5 sm:grid-cols-2">
+              {choreTemplates.map(t => {
+                const isSelected = selectedTemplateIds.has(t.id);
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => toggleTemplate(t.id)}
+                    className={`group flex cursor-pointer items-center gap-3 rounded-2xl border-2 px-4 py-3 transition-all select-none ${
+                      isSelected
+                        ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-200/60'
+                        : 'border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/40'
+                    }`}
+                  >
+                    {/* Checkbox indicator */}
+                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+                      isSelected
+                        ? 'border-violet-500 bg-violet-600'
+                        : 'border-slate-300 group-hover:border-violet-300'
+                    }`}>
+                      {isSelected && <Check size={12} strokeWidth={3} className="text-white" />}
+                    </div>
+
+                    {/* Chore info */}
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate font-bold flex items-center gap-1.5 ${isSelected ? 'text-violet-900' : 'text-slate-800'}`}>
+                        {t.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
+                        {t.title}
+                      </p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                        ${t.baseValue.toFixed(2)} / week
+                      </p>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMandatory(t.id)}
+                        className={`${btnBase} shrink-0 rounded-xl p-2 ${
+                          t.isMandatory ? 'text-rose-500 hover:text-rose-600 bg-rose-50' : 'text-slate-300 hover:text-rose-500'
+                        }`}
+                        title="Toggle mandatory"
+                      >
+                        <AlertCircle size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTemplate(t.id)}
+                        className={`${btnBase} shrink-0 rounded-xl p-2 text-slate-300 hover:text-red-500`}
+                        aria-label={`Remove ${t.title}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add chore form */}
+          <details className="group">
+            <summary className={`${btnBase} ${btnPress} flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black uppercase tracking-wide text-emerald-700 hover:bg-emerald-100`}>
+              <Plus size={16} /> Add chore to library
+            </summary>
+            <form
+              onSubmit={handleAddTemplate}
+              className="mt-3 space-y-3 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 to-white p-4"
+            >
+              <input
+                type="text"
+                placeholder="Chore name"
+                className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
+                value={newTemplateTitle}
+                onChange={e => setNewTemplateTitle(e.target.value)}
+              />
+              <label className="flex w-fit cursor-pointer select-none items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 cursor-pointer rounded accent-emerald-600"
+                  checked={newTemplateIsMandatory}
+                  onChange={e => setNewTemplateIsMandatory(e.target.checked)}
+                />
+                <span className="flex items-center gap-1.5 text-sm font-black text-slate-700">
+                  <AlertCircle size={16} className="text-rose-500" /> Mandatory chore
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step="0.5"
+                  className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold outline-none ring-emerald-500/30 focus:ring-2"
+                  value={newTemplateValue}
+                  onChange={e => setNewTemplateValue(e.target.value)}
+                />
+                <button
+                  type="submit"
+                  className={`${btnBase} ${btnPress} shrink-0 rounded-xl bg-emerald-600 px-5 py-3 font-black text-white shadow-lg shadow-emerald-600/25`}
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </details>
+        </section>
+
+        {/* ── Assignment workspace ── */}
+        <section className={`${cardSurface} p-6 md:p-8 flex flex-col gap-5`}>
+          <h3 className="text-lg font-black flex items-center gap-3 text-slate-900">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
-              <Users size={22} />
+              <UserPlus size={22} />
             </span>
-            Kids
+            Assign
           </h3>
-          <form onSubmit={handleAddKid} className="flex gap-2 mb-6">
+
+          {/* Selected chores summary */}
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
+              Selected chores
+            </p>
+            {selectedTemplates.length === 0 ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-400">
+                <CheckSquare size={16} className="text-slate-300" />
+                <span>Check chores in the library</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {selectedTemplates.map(t => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1.5 text-xs font-bold text-violet-800"
+                  >
+                    {t.isMandatory && <AlertCircle size={11} className="text-rose-500" />}
+                    {t.title}
+                    <button
+                      type="button"
+                      onClick={() => toggleTemplate(t.id)}
+                      className={`${btnBase} ml-0.5 rounded-full p-0.5 text-violet-500 hover:bg-violet-200 hover:text-violet-800`}
+                      aria-label={`Deselect ${t.title}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Kid selection */}
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
+              Apply to kids
+            </p>
+            {kids.length === 0 ? (
+              <p className="text-sm italic text-slate-400">No kids added yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {kids.map(k => {
+                  const isOn = selectedKidIds.has(k.id);
+                  const aCount = alreadyAssignedCount(k.id);
+                  const allAssigned = selectedTemplates.length > 0 && aCount === selectedTemplates.length;
+                  const someAssigned = aCount > 0 && aCount < selectedTemplates.length;
+                  return (
+                    <button
+                      key={k.id}
+                      type="button"
+                      onClick={() => toggleKid(k.id)}
+                      className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-full border-2 px-4 py-2 text-sm font-bold transition-all ${
+                        isOn
+                          ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
+                          : allAssigned
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                          : someAssigned
+                          ? 'border-amber-300 bg-amber-50 text-amber-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-violet-200'
+                      }`}
+                    >
+                      {!isOn && allAssigned && <Check size={13} />}
+                      {k.name}
+                      {!isOn && selectedTemplates.length > 0 && (
+                        <span className={`text-[10px] font-black ${
+                          isOn ? 'text-violet-200' : allAssigned ? 'text-emerald-500' : someAssigned ? 'text-amber-500' : 'text-slate-300'
+                        }`}>
+                          {aCount}/{selectedTemplates.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {selectedKidIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedKidIds(new Set())}
+                className={`${btnBase} mt-2 text-xs font-bold text-slate-400 hover:text-rose-500`}
+              >
+                Clear selection
+              </button>
+            )}
+          </div>
+
+          {/* Legend */}
+          {selectedTemplates.length > 0 && kids.length > 0 && (
+            <div className="flex flex-wrap gap-3 text-[11px] font-bold text-slate-400">
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /> All assigned</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> Partial</span>
+              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> None</span>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="mt-auto grid gap-3">
+            <button
+              type="button"
+              onClick={handleAssign as unknown as React.MouseEventHandler}
+              disabled={!canAssign || assigning}
+              className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-3.5 font-black uppercase tracking-wide text-white shadow-xl shadow-violet-500/30 disabled:pointer-events-none disabled:opacity-35`}
+            >
+              {assigning
+                ? 'Assigning…'
+                : canAssign
+                ? `Assign ${selectedTemplateIds.size} chore${selectedTemplateIds.size !== 1 ? 's' : ''} → ${selectedKidIds.size} kid${selectedKidIds.size !== 1 ? 's' : ''}`
+                : 'Select chores & kids'}
+            </button>
+            <button
+              type="button"
+              disabled={!canAssign || unassigning}
+              onClick={handleUnassign}
+              className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-rose-500 to-fuchsia-500 py-3.5 font-black uppercase tracking-wide text-white shadow-xl shadow-rose-500/30 disabled:pointer-events-none disabled:opacity-35`}
+            >
+              {unassigning
+                ? 'Removing…'
+                : canAssign
+                ? `Remove ${selectedTemplateIds.size} chore${selectedTemplateIds.size !== 1 ? 's' : ''} from ${selectedKidIds.size} kid${selectedKidIds.size !== 1 ? 's' : ''}`
+                : 'Remove chores'}
+            </button>
+          </div>
+        </section>
+      </div>
+
+      {/* ── Kids management ────────────────────────────────────────────────── */}
+      <section className={`${cardSurface} p-6 md:p-8`}>
+        <h3 className="text-lg font-black mb-5 flex items-center gap-3 text-slate-900">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+            <Users size={22} />
+          </span>
+          Kids
+        </h3>
+        <div className="flex flex-wrap gap-4">
+          {/* Add kid form */}
+          <form onSubmit={handleAddKid} className="flex gap-2">
             <input
               type="text"
-              placeholder="Name…"
-              className="flex-1 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-violet-500/30 focus:ring-2"
+              placeholder="Child's name…"
+              className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-violet-500/30 focus:ring-2"
               value={newKidName}
               onChange={e => setNewKidName(e.target.value)}
             />
@@ -225,243 +555,48 @@ export function ManageTab({
               <Plus size={22} />
             </button>
           </form>
-          <div className="space-y-2">
-            {kids.length === 0 && (
-              <p className="py-6 text-center text-sm italic text-slate-400">No kids added yet.</p>
-            )}
-            {kids.map(kid => {
-              const kidChoreCount = chores.filter(c => c.assignedTo === kid.id && !c.isArchived).length;
-              const isViewing = selectedViewKidId === kid.id;
-              return (
-                <div
-                  key={kid.id}
-                  onClick={() => setSelectedViewKidId(isViewing ? null : kid.id)}
-                  className={`group flex cursor-pointer items-center justify-between rounded-2xl border px-4 py-3 transition-all ${
-                    isViewing
-                      ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-300/40'
-                      : 'border-slate-200 bg-white hover:border-violet-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
+
+          {/* Kids list */}
+          {kids.length === 0 ? (
+            <p className="self-center text-sm italic text-slate-400">No kids added yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {kids.map(kid => {
+                const kidChoreCount = chores.filter(c => c.assignedTo === kid.id && !c.isArchived).length;
+                const isViewing = selectedViewKidId === kid.id;
+                return (
+                  <div
+                    key={kid.id}
+                    className={`group flex cursor-pointer items-center gap-2.5 rounded-2xl border-2 px-4 py-2.5 transition-all ${
+                      isViewing
+                        ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-300/40'
+                        : 'border-slate-200 bg-white hover:border-violet-300'
+                    }`}
+                    onClick={() => setSelectedViewKidId(isViewing ? null : kid.id)}
+                  >
                     <span className="font-bold text-slate-800">{kid.name}</span>
                     <span className={`rounded-full px-2 py-0.5 text-xs font-black ${
                       isViewing ? 'bg-violet-200 text-violet-700' : 'bg-slate-100 text-slate-400'
                     }`}>
-                      {kidChoreCount} {kidChoreCount === 1 ? 'chore' : 'chores'}
+                      {kidChoreCount}
                     </span>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); handleRemoveKid(kid.id); }}
+                      className={`${btnBase} rounded-xl p-1 text-slate-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); handleRemoveKid(kid.id); }}
-                    className={`${btnBase} rounded-xl p-2 text-slate-300 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100`}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          {kids.length > 0 && (
-            <p className="mt-4 text-xs text-slate-400 text-center">
-              Click a child to view their assigned chores
-            </p>
-          )}
-        </section>
-
-        {/* ── Chore library ── */}
-        <section className={`${cardSurface} p-6 md:p-8`}>
-          <h3 className="text-lg font-black mb-6 flex items-center gap-3 text-slate-900">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600">
-              <ListChecks size={22} />
-            </span>
-            Chore library
-          </h3>
-          <p className="mb-4 text-sm leading-relaxed text-slate-500">
-            Add chores once here. They stay in the list so you can assign the same chore to several kids.
-          </p>
-          <form
-            onSubmit={handleAddTemplate}
-            className="mb-6 space-y-3 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 to-white p-4"
-          >
-            <input
-              type="text"
-              placeholder="Chore name"
-              className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
-              value={newTemplateTitle}
-              onChange={e => setNewTemplateTitle(e.target.value)}
-            />
-            <label className="flex w-fit cursor-pointer select-none items-center gap-2">
-              <input
-                type="checkbox"
-                className="h-5 w-5 cursor-pointer rounded accent-emerald-600"
-                checked={newTemplateIsMandatory}
-                onChange={e => setNewTemplateIsMandatory(e.target.checked)}
-              />
-              <span className="flex items-center gap-1.5 text-sm font-black text-slate-700">
-                <AlertCircle size={16} className="text-rose-500" /> Mandatory chore
-              </span>
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                step="0.5"
-                className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold outline-none ring-emerald-500/30 focus:ring-2"
-                value={newTemplateValue}
-                onChange={e => setNewTemplateValue(e.target.value)}
-              />
-              <button
-                type="submit"
-                className={`${btnBase} ${btnPress} shrink-0 rounded-xl bg-emerald-600 px-5 py-3 font-black text-white shadow-lg shadow-emerald-600/25`}
-              >
-                Save
-              </button>
+                );
+              })}
+              <p className="self-center text-xs text-slate-400">Click a name to view their chores</p>
             </div>
-          </form>
-          <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-            {choreTemplates.length === 0 ? (
-              <p className="py-8 text-center text-sm italic text-slate-400">No chores in the library yet.</p>
-            ) : (
-              choreTemplates.map(t => (
-                <div
-                  key={t.id}
-                  className={`flex cursor-pointer items-center justify-between gap-2 rounded-2xl border px-4 py-3 transition-all ${
-                    selectedTemplateId === t.id
-                      ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-300/50'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                  onClick={() => setSelectedTemplateId(t.id)}
-                >
-                  <div className="min-w-0 text-left">
-                    <p className="truncate font-bold text-slate-900 flex items-center gap-1.5">
-                      {t.isMandatory && <AlertCircle size={14} className="text-rose-500" />}
-                      {t.title}
-                    </p>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                      ${t.baseValue.toFixed(2)} / week
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={ev => { ev.stopPropagation(); handleToggleMandatory(t.id); }}
-                      className={`${btnBase} shrink-0 rounded-xl p-2 ${
-                        t.isMandatory ? 'text-rose-500 hover:text-rose-600 bg-rose-50' : 'text-slate-300 hover:text-rose-500'
-                      }`}
-                      title="Toggle mandatory"
-                    >
-                      <AlertCircle size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={ev => { ev.stopPropagation(); handleRemoveTemplate(t.id); }}
-                      className={`${btnBase} shrink-0 rounded-xl p-2 text-slate-300 hover:text-red-500`}
-                      aria-label={`Remove ${t.title}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* ── Assign to kids ── */}
-        <section className={`${cardSurface} p-6 md:p-8`}>
-          <h3 className="text-lg font-black mb-6 flex items-center gap-3 text-slate-900">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
-              <UserPlus size={22} />
-            </span>
-            Assign to kids
-          </h3>
-          {kids.length === 0 ? (
-            <p className="py-10 text-center italic text-slate-400">Add a child first.</p>
-          ) : choreTemplates.length === 0 ? (
-            <p className="py-10 text-center italic text-slate-400">Add at least one chore to the library.</p>
-          ) : (
-            <form onSubmit={handleAssign} className="space-y-5">
-              <div>
-                <label
-                  htmlFor="assign-chore"
-                  className="mb-2 block text-xs font-black uppercase tracking-widest text-slate-400"
-                >
-                  Assigned chore
-                </label>
-                <select
-                  id="assign-chore"
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-violet-500"
-                  value={selectedTemplateId ?? ''}
-                  onChange={e => setSelectedTemplateId(e.target.value || null)}
-                >
-                  <option value="" disabled>Select chore to assign</option>
-                  {choreTemplates.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.title} (${t.baseValue.toFixed(2)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
-                  Assign to
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {kids.map(k => {
-                    const on = selectedKidIds.has(k.id);
-                    const alreadyAssigned = !!selectedTemplateId && chores.some(
-                      c => c.templateId === selectedTemplateId && c.assignedTo === k.id && !c.isArchived,
-                    );
-                    return (
-                      <button
-                        key={k.id}
-                        type="button"
-                        onClick={() => toggleKidSelect(k.id)}
-                        className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-full border-2 px-4 py-2 text-sm font-bold transition-all ${
-                          on
-                            ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
-                            : alreadyAssigned
-                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                            : 'border-slate-200 bg-white text-slate-500 hover:border-violet-200'
-                        }`}
-                        title={alreadyAssigned ? `${k.name} already has this chore` : undefined}
-                      >
-                        {alreadyAssigned && !on && <Check size={13} />}
-                        {k.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                {selectedTemplateId && kids.some(k =>
-                  chores.some(c => c.templateId === selectedTemplateId && c.assignedTo === k.id && !c.isArchived)
-                ) && (
-                  <p className="mt-2 text-xs text-emerald-600 font-bold">
-                    ✓ Green = already assigned this week
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-3">
-                <button
-                  type="submit"
-                  disabled={!selectedTemplateId || selectedKidIds.size === 0}
-                  className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-4 font-black uppercase tracking-wide text-white shadow-xl shadow-violet-500/30 disabled:pointer-events-none disabled:opacity-35`}
-                >
-                  Assign weekly chore
-                </button>
-                <button
-                  type="button"
-                  disabled={!selectedTemplateId || selectedKidIds.size === 0}
-                  onClick={handleUnassign}
-                  className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-rose-500 to-fuchsia-500 py-4 font-black uppercase tracking-wide text-white shadow-xl shadow-rose-500/30 disabled:pointer-events-none disabled:opacity-35`}
-                >
-                  Unassign selected chore
-                </button>
-              </div>
-            </form>
           )}
-        </section>
-      </div>
+        </div>
+      </section>
 
-      {/* ── Kid chores panel (shown when a kid is selected) ─────────────── */}
+      {/* ── Kid chores viewer ──────────────────────────────────────────────── */}
       {selectedKid && (
         <section className={`${cardSurface} p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
           <div className="mb-6 flex items-center justify-between gap-4">
@@ -469,7 +604,7 @@ export function ManageTab({
               <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
                 <ListChecks size={22} />
               </span>
-              {selectedKid.name}&apos;s assigned chores
+              {selectedKid.name}&apos;s chores
               <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-500">
                 {selectedKidChores.length}
               </span>
@@ -486,7 +621,7 @@ export function ManageTab({
 
           {selectedKidChores.length === 0 ? (
             <p className="py-8 text-center text-sm italic text-slate-400">
-              No chores assigned to {selectedKid.name} yet. Use the Assign panel above to add some.
+              No chores assigned to {selectedKid.name} yet.
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
