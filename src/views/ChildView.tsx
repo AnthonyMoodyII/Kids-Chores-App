@@ -180,7 +180,7 @@ export function ChildView({
             {activeKidStats.active.map(chore => {
               const isDone = chore.completedDays.includes(selectedDay);
               const earned = getChoreEarnedAmount(chore.completedDays.length, chore.baseValue);
-              const ptsPerDay = Math.round(chore.baseValue * 4);
+              const ptsPerDay = Math.max(10, Math.round(chore.baseValue * 4));
               return (
                 <button
                   key={chore.id}
