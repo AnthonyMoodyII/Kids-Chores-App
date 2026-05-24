@@ -48,11 +48,13 @@ export function ManageTab({
 
   // Rewards catalog state
   const [rewardCostEdits, setRewardCostEdits] = useState<Record<string, string>>({});
+  const [rewardTitleEdits, setRewardTitleEdits] = useState<Record<string, string>>({});
   const [newRewardTitle, setNewRewardTitle] = useState('');
   const [newRewardCost, setNewRewardCost] = useState('50');
   const [newRewardIcon, setNewRewardIcon] = useState('🎁');
   const [newRewardDesc, setNewRewardDesc] = useState('');
   const [rewardCatalogOpen, setRewardCatalogOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null); // reward id or 'new'
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const selectedKid = kids.find(k => k.id === selectedViewKidId) ?? null;
@@ -256,6 +258,15 @@ export function ManageTab({
       console.error('handleUnassignSingle error', error);
     }
   };
+
+  const EMOJI_OPTIONS = [
+    '🎮','📺','🌙','🍕','🎬','🛒','🍦','🎉','🏆','⭐',
+    '🎁','🎯','🎲','🎸','🎨','🚀','🦄','🌈','🍰','🎪',
+    '🏄','🤿','🎠','🎡','🎢','🎭','🎵','🎤','🎧','🎻',
+    '🏀','⚽','🎾','🏊','🚴','🛹','🎿','🎳','🏓','🥋',
+    '🍫','🍿','🥤','🍩','🧁','🍪','🍓','🍉','🍭','🥳',
+    '🛋','📚','✈️','🚢','🏰','🌊','🏔','🌺','🦋','🐶',
+  ];
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -652,18 +663,63 @@ export function ManageTab({
                           r.isActive ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-white opacity-60'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-2xl">{r.icon || '🎁'}</span>
-                            <div className="min-w-0">
-                              <p className="font-bold text-slate-900 truncate">{r.title}</p>
-                              {r.description && (
-                                <p className="text-xs text-slate-400 truncate">{r.description}</p>
-                              )}
-                            </div>
+                        {/* ── Row 1: emoji picker + editable title + move/delete ── */}
+                        <div className="flex items-start gap-2">
+                          {/* Emoji picker button */}
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setEmojiPickerOpen(emojiPickerOpen === r.id ? null : r.id)}
+                              className={`${btnBase} flex h-9 w-9 items-center justify-center rounded-xl text-2xl hover:bg-amber-100`}
+                              title="Change icon"
+                            >
+                              {r.icon || '🎁'}
+                            </button>
+                            {emojiPickerOpen === r.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
+                                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
+                                  <div className="grid grid-cols-10 gap-0.5 mb-2">
+                                    {EMOJI_OPTIONS.map(e => (
+                                      <button
+                                        key={e}
+                                        type="button"
+                                        onClick={() => { onUpdateReward(r.id, { icon: e }); setEmojiPickerOpen(null); }}
+                                        className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-amber-50`}
+                                      >{e}</button>
+                                    ))}
+                                  </div>
+                                  <a
+                                    href="https://www.magnific.com/icons/copy-paste"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
+                                    onClick={() => setEmojiPickerOpen(null)}
+                                  >
+                                    🔍 Browse more icons at Magnific →
+                                  </a>
+                                </div>
+                              </>
+                            )}
                           </div>
-                          <div className="flex shrink-0 gap-1">
-                            {/* Move up */}
+
+                          {/* Editable title */}
+                          <input
+                            type="text"
+                            className="min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-2 py-1 font-bold text-slate-900 outline-none ring-amber-400/50 hover:border-amber-200 hover:bg-white focus:border-amber-300 focus:bg-white focus:ring-2"
+                            value={rewardTitleEdits[r.id] ?? r.title}
+                            onChange={e => setRewardTitleEdits(prev => ({ ...prev, [r.id]: e.target.value }))}
+                            onBlur={() => {
+                              const newTitle = (rewardTitleEdits[r.id] ?? r.title).trim();
+                              if (newTitle && newTitle !== r.title) {
+                                onUpdateReward(r.id, { title: newTitle });
+                              }
+                              setRewardTitleEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+                            }}
+                          />
+
+                          {/* Move up/down + delete */}
+                          <div className="flex shrink-0 items-center gap-0.5">
                             <button
                               type="button"
                               disabled={idx === 0}
@@ -673,7 +729,6 @@ export function ManageTab({
                             >
                               <ChevronUp size={13} />
                             </button>
-                            {/* Move down */}
                             <button
                               type="button"
                               disabled={idx === rewards.length - 1}
@@ -683,7 +738,6 @@ export function ManageTab({
                             >
                               <ChevronDown size={13} />
                             </button>
-                            {/* Delete */}
                             <button
                               type="button"
                               onClick={() => {
@@ -697,6 +751,7 @@ export function ManageTab({
                           </div>
                         </div>
 
+                        {/* ── Row 2: cost + active toggle ── */}
                         <div className="flex items-center gap-2">
                           {/* Point cost inline edit */}
                           <div className="flex flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -717,14 +772,16 @@ export function ManageTab({
                             />
                             <span className="text-xs text-slate-400">pts</span>
                           </div>
-                          {/* Active toggle */}
+                          {/* Active toggle — fixed centering */}
                           <button
                             type="button"
                             onClick={() => onUpdateReward(r.id, { isActive: !r.isActive })}
-                            className={`${btnBase} relative h-6 w-11 rounded-full transition-colors shrink-0 ${r.isActive ? 'bg-amber-500' : 'bg-slate-300'}`}
+                            className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${r.isActive ? 'bg-amber-500' : 'bg-slate-300'}`}
                             title={r.isActive ? 'Disable reward' : 'Enable reward'}
                           >
-                            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${r.isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                            <span
+                              className={`absolute top-[2px] left-[2px] h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${r.isActive ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
                           </button>
                         </div>
                       </div>
@@ -740,14 +797,43 @@ export function ManageTab({
               </summary>
               <div className="mt-3 space-y-3 rounded-2xl border border-amber-100 bg-gradient-to-br from-amber-50/90 to-white p-4">
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Emoji icon (e.g. 🎮)"
-                    className="w-24 shrink-0 rounded-xl border border-white bg-white px-3 py-3 text-center font-bold text-slate-800 outline-none ring-amber-500/30 focus:ring-2"
-                    value={newRewardIcon}
-                    onChange={e => setNewRewardIcon(e.target.value)}
-                    maxLength={4}
-                  />
+                  {/* Emoji picker for new reward */}
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setEmojiPickerOpen(emojiPickerOpen === 'new' ? null : 'new')}
+                      className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white text-2xl hover:border-amber-300`}
+                      title="Pick icon"
+                    >
+                      {newRewardIcon}
+                    </button>
+                    {emojiPickerOpen === 'new' && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
+                        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
+                          <div className="grid grid-cols-10 gap-0.5 mb-2">
+                            {EMOJI_OPTIONS.map(e => (
+                              <button
+                                key={e}
+                                type="button"
+                                onClick={() => { setNewRewardIcon(e); setEmojiPickerOpen(null); }}
+                                className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-amber-50`}
+                              >{e}</button>
+                            ))}
+                          </div>
+                          <a
+                            href="https://www.magnific.com/icons/copy-paste"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
+                            onClick={() => setEmojiPickerOpen(null)}
+                          >
+                            🔍 Browse more icons at Magnific →
+                          </a>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <input
                     type="text"
                     placeholder="Reward name"
