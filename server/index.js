@@ -1025,15 +1025,25 @@ app.get('/api/parent/oauth/settings', async (req, res) => {
 });
 
 app.post('/api/parent/oauth/settings', async (req, res) => {
-  const { currentPassword, oauthIssuer, oauthClientId, oauthClientSecret } = req.body;
+  const { currentPassword, oauthIssuer, oauthClientId, oauthClientSecret, clearCredentials } = req.body;
   const parent = await prisma.parent.findFirst();
   if (!parent) return res.status(404).json({ error: 'No parent found.' });
   const isValid = await bcrypt.compare(currentPassword, parent.password);
   if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
   const data = {};
-  if (oauthIssuer !== undefined) data.oauthIssuer = oauthIssuer.trim() || null;
-  if (oauthClientId !== undefined) data.oauthClientId = oauthClientId.trim() || null;
-  if (oauthClientSecret?.trim()) data.oauthClientSecret = oauthClientSecret.trim();
+  if (clearCredentials) {
+    // Wipe all OAuth fields
+    data.oauthIssuer = null;
+    data.oauthClientId = null;
+    data.oauthClientSecret = null;
+  } else {
+    if (oauthIssuer !== undefined) data.oauthIssuer = oauthIssuer.trim() || null;
+    if (oauthClientId !== undefined) data.oauthClientId = oauthClientId.trim() || null;
+    // Allow explicit clear (empty string) or update
+    if ('oauthClientSecret' in req.body) {
+      data.oauthClientSecret = oauthClientSecret?.trim() || null;
+    }
+  }
   await prisma.parent.update({ where: { id: parent.id }, data });
   _oidcCache = null;
   res.json({ success: true });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, ExternalLink, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
+import { Settings, ExternalLink, ChevronDown, ChevronUp, Copy, Check, Trash2, Pencil, ShieldCheck, ShieldOff } from 'lucide-react';
 import { API_URL, cardSurface, btnBase, btnPress } from '../lib/constants';
 
 export function OAuthIcon({ size = 20 }: { size?: number }) {
@@ -126,6 +126,7 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
   const [loading, setLoading] = useState(true);
 
   // OAuth provider form state
+  const [editingCredential, setEditingCredential] = useState(false);
   const [issuer, setIssuer] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -133,6 +134,12 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState('');
   const [saveLoading, setSaveLoading] = useState(false);
+
+  // Delete credential state
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Email management state
   const [newEmail, setNewEmail] = useState('');
@@ -156,6 +163,8 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
       .finally(() => setLoading(false));
   }, []);
 
+  const isConfigured = !!(settings.oauthClientId);
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaveError('');
@@ -178,7 +187,13 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
         setSaveSuccess('Settings saved.');
         setSavePassword('');
         setClientSecret('');
-        setSettings(prev => ({ ...prev, oauthIssuer: issuer, oauthClientId: clientId, oauthClientSecretSet: !!(clientSecret.trim() || prev.oauthClientSecretSet) }));
+        setSettings(prev => ({
+          ...prev,
+          oauthIssuer: issuer,
+          oauthClientId: clientId,
+          oauthClientSecretSet: !!(clientSecret.trim() || prev.oauthClientSecretSet),
+        }));
+        setEditingCredential(false);
       } else {
         setSaveError(result.error || 'Failed to save settings.');
       }
@@ -186,6 +201,34 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
       setSaveError('Request failed. Check your connection.');
     } finally {
       setSaveLoading(false);
+    }
+  };
+
+  const handleDeleteCredential = async () => {
+    setDeleteError('');
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/parent/oauth/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: deletePassword, clearCredentials: true }),
+      });
+      const result = await res.json();
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, oauthIssuer: '', oauthClientId: '', oauthClientSecretSet: false }));
+        setIssuer('https://accounts.google.com');
+        setClientId('');
+        setClientSecret('');
+        setDeleteMode(false);
+        setDeletePassword('');
+        setEditingCredential(false);
+      } else {
+        setDeleteError(result.error || 'Failed to delete credentials.');
+      }
+    } catch {
+      setDeleteError('Request failed. Check your connection.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -255,70 +298,187 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
             <p className="mb-3 text-xs font-black uppercase tracking-widest text-slate-400">
               OAuth Provider
             </p>
-            <form onSubmit={handleSaveSettings} className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-500">
-                  Issuer URL
-                  <span className="ml-1 font-normal text-slate-400">(default: https://accounts.google.com)</span>
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://accounts.google.com"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
-                  value={issuer}
-                  onChange={e => setIssuer(e.target.value)}
-                />
+
+            {/* ── Saved-credential card (shown when configured and not editing) ── */}
+            {isConfigured && !editingCredential ? (
+              <div className="space-y-3">
+                {/* Status banner */}
+                <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <ShieldCheck size={20} className="shrink-0 text-emerald-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-black text-emerald-800">Google OAuth configured</p>
+                    <p className="text-xs text-emerald-600">Parents in the list below can sign in with Google</p>
+                  </div>
+                </div>
+
+                {/* Credential rows */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white divide-y divide-slate-100">
+                  {/* Issuer */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className="w-24 shrink-0 text-xs font-black uppercase tracking-wider text-slate-400">Issuer</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-700">
+                      {settings.oauthIssuer || 'https://accounts.google.com'}
+                    </span>
+                  </div>
+                  {/* Client ID */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className="w-24 shrink-0 text-xs font-black uppercase tracking-wider text-slate-400">Client ID</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-mono font-bold text-slate-700" title={settings.oauthClientId}>
+                      {settings.oauthClientId.length > 40
+                        ? `${settings.oauthClientId.slice(0, 20)}…${settings.oauthClientId.slice(-16)}`
+                        : settings.oauthClientId}
+                    </span>
+                  </div>
+                  {/* Client Secret */}
+                  <div className="flex items-center gap-3 px-4 py-3">
+                    <span className="w-24 shrink-0 text-xs font-black uppercase tracking-wider text-slate-400">Secret</span>
+                    <span className="flex-1 text-sm font-bold text-slate-400">
+                      {settings.oauthClientSecretSet ? '●●●●●●●● saved' : <span className="text-amber-600">not set</span>}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setEditingCredential(true); setDeleteMode(false); setSaveError(''); setSaveSuccess(''); }}
+                    className={`${btnBase} ${btnPress} flex flex-1 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white py-3 text-xs font-black uppercase tracking-wide text-slate-600 hover:border-violet-300 hover:text-violet-600`}
+                  >
+                    <Pencil size={13} /> Edit Credentials
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDeleteMode(v => !v); setDeletePassword(''); setDeleteError(''); }}
+                    className={`${btnBase} ${btnPress} flex flex-1 items-center justify-center gap-2 rounded-2xl border py-3 text-xs font-black uppercase tracking-wide transition-colors ${
+                      deleteMode
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-red-200 bg-white text-red-500 hover:bg-red-50'
+                    }`}
+                  >
+                    <Trash2 size={13} /> Delete Credentials
+                  </button>
+                </div>
+
+                {/* Delete confirmation */}
+                {deleteMode && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
+                    <p className="text-sm font-bold text-red-700">
+                      This will remove the Client ID, Client Secret, and Issuer URL. Google sign-in will stop working until you re-enter credentials.
+                    </p>
+                    <input
+                      type="password"
+                      placeholder="Current parent password to confirm"
+                      autoComplete="current-password"
+                      className="w-full rounded-xl border border-red-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-red-400/30 focus:ring-2"
+                      value={deletePassword}
+                      onChange={e => setDeletePassword(e.target.value)}
+                    />
+                    {deleteError && <p className="text-xs font-bold text-red-600">{deleteError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={deleteLoading || !deletePassword}
+                        onClick={handleDeleteCredential}
+                        className={`${btnBase} ${btnPress} flex-1 rounded-2xl bg-red-600 py-3 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-red-500/25 disabled:pointer-events-none disabled:opacity-50`}
+                      >
+                        {deleteLoading ? 'Deleting…' : 'Confirm Delete'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDeleteMode(false); setDeletePassword(''); setDeleteError(''); }}
+                        className={`${btnBase} ${btnPress} flex-1 rounded-2xl border border-slate-200 bg-white py-3 text-xs font-black uppercase tracking-wide text-slate-500`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-500">Client ID</label>
-                <input
-                  type="text"
-                  placeholder="your-client-id.apps.googleusercontent.com"
-                  autoComplete="off"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
-                  value={clientId}
-                  onChange={e => setClientId(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-500">
-                  Client Secret
-                  {settings.oauthClientSecretSet && (
-                    <span className="ml-1 font-normal text-slate-400">(currently set — leave blank to keep)</span>
+            ) : (
+              /* ── Input form (not configured, or editing) ── */
+              <form onSubmit={handleSaveSettings} className="space-y-3">
+                {isConfigured && (
+                  <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <ShieldOff size={14} className="shrink-0 text-amber-600" />
+                    <p className="text-xs font-bold text-amber-700">Editing — save to update, or cancel to keep existing credentials</p>
+                  </div>
+                )}
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-500">
+                    Issuer URL
+                    <span className="ml-1 font-normal text-slate-400">(default: https://accounts.google.com)</span>
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://accounts.google.com"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+                    value={issuer}
+                    onChange={e => setIssuer(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-500">Client ID</label>
+                  <input
+                    type="text"
+                    placeholder="your-client-id.apps.googleusercontent.com"
+                    autoComplete="off"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+                    value={clientId}
+                    onChange={e => setClientId(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-500">
+                    Client Secret
+                    {settings.oauthClientSecretSet && (
+                      <span className="ml-1 font-normal text-slate-400">(saved — leave blank to keep)</span>
+                    )}
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={settings.oauthClientSecretSet ? '●●●● saved — leave blank to keep' : 'Enter client secret'}
+                    autoComplete="off"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+                    value={clientSecret}
+                    onChange={e => setClientSecret(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-500">
+                    Current Password <span className="font-normal text-slate-400">(required to save)</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Current parent password"
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
+                    value={savePassword}
+                    onChange={e => setSavePassword(e.target.value)}
+                  />
+                </div>
+                {saveError && <p className="text-sm font-bold text-red-600">{saveError}</p>}
+                {saveSuccess && <p className="text-sm font-bold text-emerald-600">{saveSuccess}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={saveLoading}
+                    className={`${btnBase} ${btnPress} flex-1 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-3.5 font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-50`}
+                  >
+                    {saveLoading ? 'Saving…' : 'Save Credentials'}
+                  </button>
+                  {isConfigured && (
+                    <button
+                      type="button"
+                      onClick={() => { setEditingCredential(false); setSaveError(''); setSaveSuccess(''); setClientSecret(''); }}
+                      className={`${btnBase} ${btnPress} rounded-2xl border border-slate-200 bg-white px-5 py-3.5 font-black uppercase tracking-wide text-slate-500 hover:border-slate-300`}
+                    >
+                      Cancel
+                    </button>
                   )}
-                </label>
-                <input
-                  type="password"
-                  placeholder={settings.oauthClientSecretSet ? '●●●● saved' : 'Enter client secret'}
-                  autoComplete="off"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
-                  value={clientSecret}
-                  onChange={e => setClientSecret(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-500">
-                  Current Password <span className="font-normal text-slate-400">(required to save)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="Current parent password"
-                  autoComplete="current-password"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-900 outline-none ring-violet-500/30 focus:ring-2"
-                  value={savePassword}
-                  onChange={e => setSavePassword(e.target.value)}
-                />
-              </div>
-              {saveError ? <p className="text-sm font-bold text-red-600">{saveError}</p> : null}
-              {saveSuccess ? <p className="text-sm font-bold text-emerald-600">{saveSuccess}</p> : null}
-              <button
-                type="submit"
-                disabled={saveLoading}
-                className={`${btnBase} ${btnPress} w-full rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 py-3.5 font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-50`}
-              >
-                {saveLoading ? 'Saving…' : 'Save Settings'}
-              </button>
-            </form>
+                </div>
+              </form>
+            )}
           </section>
 
           {/* Section 2 — Authorized Parents */}
