@@ -2,9 +2,6 @@ version: '3.8'
 
 services:
   db:
-    build:
-      context: ./postgres
-      dockerfile: Dockerfile
     image: moodyplex/moody-chores-postgres:latest
     container_name: chorehero_db
     restart: always
@@ -18,9 +15,6 @@ services:
       - chore-network
 
   backend:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
     image: moodyplex/chores-app-backend:latest
     container_name: chorehero_api
     restart: always
@@ -37,13 +31,9 @@ services:
       - chore-network
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ""
     image: moodyplex/chores-app-frontend:latest
     container_name: chorehero_ui
+    restart: always
     ports:
       - "8080:80"
     depends_on:
