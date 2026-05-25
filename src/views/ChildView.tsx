@@ -178,6 +178,73 @@ export function ChildView({
         </div>
       )}
 
+      {/* Mission Board — day tabs + two-column chore board */}
+      <MissionBoard
+        activeKidId={activeKidId}
+        activeKidName={activeKid?.name ?? ''}
+        selectedDay={selectedDay}
+        onSelectDay={setSelectedDay}
+        mandatoryChores={activeKidStats.active}
+        poolTemplates={poolTemplates}
+        dailySelections={dailySelections}
+        onToggleMandatory={onToggleDay}
+        onPickChore={onPickChore}
+        onCompleteOptional={onCompleteOptional}
+        onUnpickChore={onUnpickChore}
+      />
+
+      {/* Weekly earnings tracker */}
+      <WeeklyEarningsTracker
+        mandatoryChores={activeKidStats.active}
+        poolTemplates={poolTemplates}
+        dailySelections={dailySelections.filter(s => s.childId === activeKidId)}
+      />
+
+      {/* Rewards catalog — right under chores so kids see what they're working toward */}
+      {activeKidId && activeRewards.length > 0 && (
+        <div className={`${cardSurface} p-6 md:p-8`}>
+          <div className="mb-5 flex items-center gap-2">
+            <span className="text-2xl">🎁</span>
+            <div>
+              <h3 className="text-xl font-black text-slate-900">Rewards</h3>
+              <p className="text-sm text-slate-500">Tap ✨ to save a goal. Tap <strong>Ask Parent</strong> to request.</p>
+            </div>
+          </div>
+          <RewardsCatalog
+            rewards={rewards}
+            balance={kidBalance}
+            kidId={activeKidId}
+            kidName={activeKid?.name ?? ''}
+            redemptionRequests={redemptionRequests}
+            goalRewardIds={goalRewardIds}
+            onToggleGoal={toggleGoal}
+            onRequestRedemption={rewardId =>
+              onRequestRedemption(activeKidId, activeKid?.name ?? '', rewardId)
+            }
+          />
+        </div>
+      )}
+
+      {/* Suggest a reward */}
+      {activeKidId && (
+        <div className="flex justify-center">
+          <SuggestRewardForm
+            kidId={activeKidId}
+            kidName={activeKid?.name ?? ''}
+            onSubmit={(title, description) =>
+              onSubmitRewardIdea(activeKidId, activeKid?.name ?? '', title, description)
+            }
+          />
+        </div>
+      )}
+
+      {/* Nudge banner when they can afford something */}
+      {cheapestAffordable && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm font-bold text-emerald-700">
+          🎉 You have enough for <strong>{cheapestAffordable.title}</strong>! Ask a parent to redeem it.
+        </div>
+      )}
+
       {/* Cash → Points conversion card */}
       {activeKidId && moneyOwed >= 0.5 && (
         <div className="rounded-3xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-6 py-5">
@@ -247,89 +314,21 @@ export function ChildView({
         </div>
       )}
 
-      {/* Nudge banner when they can afford something */}
-      {cheapestAffordable && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm font-bold text-emerald-700">
-          🎉 You have enough for <strong>{cheapestAffordable.title}</strong>! Ask a parent to redeem it.
-        </div>
-      )}
-
-      {/* Progress overview card */}
+      {/* Progress overview card — weekly summary / historical */}
       {activeKidId && activeKidStats.active.length > 0 && (
         <div className={`${cardSurface} p-6 md:p-8`}>
           <h3 className="mb-6 text-xl font-black text-black">
-            {activeKid?.name ?? 'My'}&apos;s progress
+            {activeKid?.name ?? 'My'}&apos;s weekly progress
           </h3>
           <ChoreProgressRows
             choreList={activeKidStats.active}
             showParentApprove={false}
           />
-          {/* Daily points chart */}
           {activeKidId && (
             <div className="mt-6">
               <PointsDailyChart chores={activeKidStats.active} />
             </div>
           )}
-        </div>
-      )}
-
-      {/* Mission Board — day tabs + two-column chore board */}
-      <MissionBoard
-        activeKidId={activeKidId}
-        activeKidName={activeKid?.name ?? ''}
-        selectedDay={selectedDay}
-        onSelectDay={setSelectedDay}
-        mandatoryChores={activeKidStats.active}
-        poolTemplates={poolTemplates}
-        dailySelections={dailySelections}
-        onToggleMandatory={onToggleDay}
-        onPickChore={onPickChore}
-        onCompleteOptional={onCompleteOptional}
-        onUnpickChore={onUnpickChore}
-      />
-
-      {/* Weekly earnings tracker */}
-      <WeeklyEarningsTracker
-        mandatoryChores={activeKidStats.active}
-        poolTemplates={poolTemplates}
-        dailySelections={dailySelections.filter(s => s.childId === activeKidId)}
-      />
-
-      {/* Rewards catalog */}
-      {activeKidId && activeRewards.length > 0 && (
-        <div className={`${cardSurface} p-6 md:p-8`}>
-          <div className="mb-5 flex items-center gap-2">
-            <span className="text-2xl">🎁</span>
-            <div>
-              <h3 className="text-xl font-black text-slate-900">Rewards</h3>
-              <p className="text-sm text-slate-500">Tap ✨ to save a goal. Tap <strong>Ask Parent</strong> to request.</p>
-            </div>
-          </div>
-          <RewardsCatalog
-            rewards={rewards}
-            balance={kidBalance}
-            kidId={activeKidId}
-            kidName={activeKid?.name ?? ''}
-            redemptionRequests={redemptionRequests}
-            goalRewardIds={goalRewardIds}
-            onToggleGoal={toggleGoal}
-            onRequestRedemption={rewardId =>
-              onRequestRedemption(activeKidId, activeKid?.name ?? '', rewardId)
-            }
-          />
-        </div>
-      )}
-
-      {/* Suggest a reward */}
-      {activeKidId && (
-        <div className="flex justify-center">
-          <SuggestRewardForm
-            kidId={activeKidId}
-            kidName={activeKid?.name ?? ''}
-            onSubmit={(title, description) =>
-              onSubmitRewardIdea(activeKidId, activeKid?.name ?? '', title, description)
-            }
-          />
         </div>
       )}
     </div>

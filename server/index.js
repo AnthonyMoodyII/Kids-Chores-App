@@ -69,6 +69,25 @@ async function sendEmail(subject, htmlBody) {
   }
 }
 
+async function sendGotify(provider, title, message) {
+  try {
+    const { url, token, priority = 5 } = provider.config || {};
+    if (!url || !token) return;
+    const endpoint = url.replace(/\/$/, '') + '/message';
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ title, message, priority: Number(priority) }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (err) {
+    console.error(`[gotify:${provider.name}] send error:`, err.message);
+  }
+}
+
 async function notify(event, title, message, htmlBody) {
   const ns = await getNotifSettings();
   if (!ns) return;
@@ -81,9 +100,18 @@ async function notify(event, title, message, htmlBody) {
     rewardApproved: ns.notifyRewardApproved,
   };
   if (!eventMap[event]) return;
+
+  // Fan out to all enabled providers
+  const providers = await prisma.notificationProvider.findMany({ where: { enabled: true } });
+  const providerSends = providers.map(p => {
+    if (p.type === 'gotify') return sendGotify(p, title, message);
+    return Promise.resolve();
+  });
+
   await Promise.all([
     sendPushover(title, message),
     sendEmail(title, htmlBody || `<p>${message}</p>`),
+    ...providerSends,
   ]);
 }
 
@@ -1109,6 +1137,121 @@ app.post('/api/notifications/test-email', async (req, res) => {
       subject: '🧪 Chore App Test Email',
       html: '<p>Email notifications are working!</p>',
     });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Notification Providers (multi-provider: Gotify, etc.) ────────────────────
+
+// Helper: mask secrets from config before sending to client
+function maskProviderConfig(type, config) {
+  if (type === 'gotify') {
+    return {
+      url: config.url || '',
+      tokenSet: !!config.token,
+      priority: config.priority ?? 5,
+    };
+  }
+  return {};
+}
+
+app.get('/api/notification-providers', async (req, res) => {
+  const providers = await prisma.notificationProvider.findMany({
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json(providers.map(p => ({
+    id: p.id,
+    type: p.type,
+    name: p.name,
+    enabled: p.enabled,
+    createdAt: p.createdAt,
+    config: maskProviderConfig(p.type, p.config),
+  })));
+});
+
+app.post('/api/notification-providers', async (req, res) => {
+  const { currentPassword, type, name, config = {} } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+  if (!type || !name?.trim()) return res.status(400).json({ error: 'type and name are required.' });
+
+  const provider = await prisma.notificationProvider.create({
+    data: { type, name: name.trim(), enabled: true, config },
+  });
+  res.json({ ...provider, config: maskProviderConfig(provider.type, provider.config) });
+});
+
+app.put('/api/notification-providers/:id', async (req, res) => {
+  const { id } = req.params;
+  const { currentPassword, name, enabled, config } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+
+  const existing = await prisma.notificationProvider.findUnique({ where: { id } });
+  if (!existing) return res.status(404).json({ error: 'Provider not found.' });
+
+  const data = {};
+  if (name !== undefined) data.name = name.trim();
+  if (enabled !== undefined) data.enabled = Boolean(enabled);
+  if (config !== undefined) {
+    // Merge config — only overwrite keys that are provided; preserve stored secrets if not re-sent
+    const merged = { ...existing.config };
+    for (const [k, v] of Object.entries(config)) {
+      if (v !== undefined && v !== '') merged[k] = v;
+    }
+    data.config = merged;
+  }
+
+  const updated = await prisma.notificationProvider.update({ where: { id }, data });
+  res.json({ ...updated, config: maskProviderConfig(updated.type, updated.config) });
+});
+
+app.delete('/api/notification-providers/:id', async (req, res) => {
+  const { id } = req.params;
+  const { currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+  await prisma.notificationProvider.delete({ where: { id } });
+  res.json({ ok: true });
+});
+
+app.post('/api/notification-providers/:id/test', async (req, res) => {
+  const { id } = req.params;
+  const { currentPassword } = req.body;
+  const parent = await prisma.parent.findFirst();
+  if (!parent) return res.status(404).json({ error: 'No parent found.' });
+  const isValid = await bcrypt.compare(currentPassword, parent.password);
+  if (!isValid) return res.status(403).json({ error: 'Current password is incorrect.' });
+
+  const provider = await prisma.notificationProvider.findUnique({ where: { id } });
+  if (!provider) return res.status(404).json({ error: 'Provider not found.' });
+
+  try {
+    if (provider.type === 'gotify') {
+      const { url, token, priority = 5 } = provider.config || {};
+      if (!url || !token) return res.status(400).json({ error: 'Gotify URL and token are required.' });
+      const endpoint = url.replace(/\/$/, '') + '/message';
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ title: '🧪 Chore App Test', message: 'Gotify notifications are working!', priority: Number(priority) }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        return res.status(400).json({ error: `Gotify returned ${r.status}: ${txt}` });
+      }
+    } else {
+      return res.status(400).json({ error: `No test handler for type: ${provider.type}` });
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

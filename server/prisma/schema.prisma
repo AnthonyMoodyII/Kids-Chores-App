@@ -138,6 +138,15 @@ model DailyChoreSelection {
   @@unique([childId, templateId, day, weekOf])
 }
 
+model NotificationProvider {
+  id        String   @id @default(uuid())
+  type      String   // 'gotify' | future providers
+  name      String
+  enabled   Boolean  @default(true)
+  config    Json     @default("{}")
+  createdAt DateTime @default(now())
+}
+
 model NotificationSettings {
   id                   String  @id @default("singleton")
   pushoverAppToken     String?

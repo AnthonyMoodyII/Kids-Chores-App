@@ -129,6 +129,23 @@ export interface RedemptionRequest {
   timestamp: string;
 }
 
+export type NotificationProviderType = 'gotify';
+
+export interface NotificationProviderConfig {
+  url?: string;
+  tokenSet?: boolean;
+  priority?: number;
+}
+
+export interface NotificationProvider {
+  id: string;
+  type: NotificationProviderType;
+  name: string;
+  enabled: boolean;
+  config: NotificationProviderConfig;
+  createdAt: string;
+}
+
 export interface NotificationSettings {
   pushoverEnabled: boolean;
   pushoverTokenSet: boolean;
