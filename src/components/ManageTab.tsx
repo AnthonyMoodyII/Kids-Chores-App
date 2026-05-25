@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp } from 'lucide-react';
+import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, RewardTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
 
@@ -37,6 +37,14 @@ export function ManageTab({
   const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
   const [newTemplateMaxPerDay, setNewTemplateMaxPerDay] = useState(1);
   const [newTemplateIsInPool, setNewTemplateIsInPool] = useState(true);
+
+  // Inline editing of existing templates
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editValue, setEditValue] = useState('');
+  const [editMaxPerDay, setEditMaxPerDay] = useState(1);
+  const [editIsInPool, setEditIsInPool] = useState(true);
+  const [editSaving, setEditSaving] = useState(false);
 
   // Multi-select for chore templates
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
@@ -189,6 +197,42 @@ export function ManageTab({
     }
   };
 
+  const startEditTemplate = (t: ChoreTemplate) => {
+    setEditingTemplateId(t.id);
+    setEditTitle(t.title);
+    setEditValue(t.baseValue.toFixed(2));
+    setEditMaxPerDay(t.maxPerDay ?? 1);
+    setEditIsInPool(t.isInPool !== false);
+  };
+
+  const cancelEditTemplate = () => {
+    setEditingTemplateId(null);
+  };
+
+  const handleSaveTemplate = async (templateId: string) => {
+    setEditSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/api/templates/${templateId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          baseValue: parseFloat(editValue) || 0,
+          maxPerDay: editMaxPerDay,
+          isInPool: editIsInPool,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update template');
+      const updated: ChoreTemplate = await res.json();
+      setChoreTemplates(prev => prev.map(t => t.id === templateId ? updated : t));
+      setEditingTemplateId(null);
+    } catch (error) {
+      console.error('handleSaveTemplate error', error);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canAssign) return;
@@ -325,6 +369,85 @@ export function ManageTab({
             <div className="mb-6 grid gap-2.5 sm:grid-cols-2">
               {choreTemplates.map(t => {
                 const isSelected = selectedTemplateIds.has(t.id);
+                const isEditing = editingTemplateId === t.id;
+
+                if (isEditing) {
+                  return (
+                    <div
+                      key={t.id}
+                      className="col-span-full rounded-2xl border-2 border-indigo-300 bg-indigo-50 p-4 sm:col-span-2"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <p className="mb-3 text-xs font-black uppercase tracking-wider text-indigo-600">
+                        ✏️ Editing: {t.title}
+                      </p>
+                      <div className="space-y-3">
+                        <input
+                          type="text"
+                          placeholder="Chore name"
+                          className="w-full rounded-xl border border-white bg-white px-4 py-2.5 font-bold text-slate-800 outline-none ring-indigo-400/30 focus:ring-2"
+                          value={editTitle}
+                          onChange={e => setEditTitle(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex flex-wrap gap-3">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-black uppercase tracking-wide text-slate-500">$ Value</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              className="w-24 rounded-xl border border-white bg-white px-3 py-2 font-bold outline-none ring-indigo-400/30 focus:ring-2"
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-black uppercase tracking-wide text-slate-500">Max/day</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              className="w-20 rounded-xl border border-white bg-white px-3 py-2 font-bold outline-none ring-indigo-400/30 focus:ring-2"
+                              value={editMaxPerDay}
+                              onChange={e => setEditMaxPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                            />
+                            <span className="text-xs text-slate-400">
+                              {editMaxPerDay === 1 ? 'once/day' : `×${editMaxPerDay}/day`}
+                            </span>
+                          </div>
+                        </div>
+                        <label className="flex w-fit cursor-pointer select-none items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 cursor-pointer rounded accent-teal-600"
+                            checked={editIsInPool}
+                            onChange={e => setEditIsInPool(e.target.checked)}
+                          />
+                          <span className="text-sm font-black text-slate-700">🏊 Show in optional pool</span>
+                        </label>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={editSaving || !editTitle.trim()}
+                            onClick={() => handleSaveTemplate(t.id)}
+                            className={`${btnBase} ${btnPress} rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-indigo-500/25 disabled:pointer-events-none disabled:opacity-50`}
+                          >
+                            {editSaving ? 'Saving…' : '✓ Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditTemplate}
+                            className={`${btnBase} ${btnPress} rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-500 hover:text-slate-700`}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={t.id}
@@ -373,6 +496,14 @@ export function ManageTab({
 
                     {/* Action buttons */}
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => startEditTemplate(t)}
+                        className={`${btnBase} shrink-0 rounded-xl p-2 text-slate-300 hover:text-indigo-500`}
+                        title="Edit chore"
+                      >
+                        <Pencil size={14} />
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleToggleMandatory(t.id)}
