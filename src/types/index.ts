@@ -19,6 +19,21 @@ export interface ChoreTemplate {
   title: string;
   baseValue: number;
   isMandatory?: boolean;
+  maxPerDay?: number;
+  isInPool?: boolean;
+}
+
+export interface DailyChoreSelection {
+  id: string;
+  childId: string;
+  childName: string;
+  templateId: string;
+  title: string;
+  baseValue: number;
+  maxPerDay: number;
+  day: DayOfWeek;
+  weekOf: string;
+  completions: number;
 }
 
 export interface Chore {

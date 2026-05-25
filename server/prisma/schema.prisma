@@ -19,6 +19,8 @@ model ChoreTemplate {
   title       String
   baseValue   Float
   isMandatory Boolean  @default(false)
+  maxPerDay   Int      @default(1)
+  isInPool    Boolean  @default(true)
 }
 
 model Chore {
@@ -116,6 +118,24 @@ model RedemptionRequest {
   pointCost        Int
   status           String   @default("pending")
   timestamp        DateTime @default(now())
+}
+
+// ── Optional Chore Pool ───────────────────────────────────────────────────────
+
+model DailyChoreSelection {
+  id          String   @id @default(uuid())
+  childId     String
+  childName   String
+  templateId  String
+  title       String
+  baseValue   Float
+  maxPerDay   Int      @default(1)
+  day         String
+  weekOf      String
+  completions Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@unique([childId, templateId, day, weekOf])
 }
 
 model NotificationSettings {

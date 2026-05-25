@@ -153,10 +153,28 @@ app.get('/api/templates', async (req, res) => {
 });
 
 app.post('/api/templates', async (req, res) => {
-  const { title, baseValue, isMandatory } = req.body;
+  const { title, baseValue, isMandatory, maxPerDay, isInPool } = req.body;
   const template = await prisma.choreTemplate.create({
-    data: { title, baseValue, isMandatory: isMandatory || false },
+    data: {
+      title,
+      baseValue,
+      isMandatory: isMandatory || false,
+      maxPerDay: maxPerDay != null ? parseInt(maxPerDay) : 1,
+      isInPool: isInPool !== undefined ? Boolean(isInPool) : true,
+    },
   });
+  res.json(template);
+});
+
+app.put('/api/templates/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, baseValue, maxPerDay, isInPool } = req.body;
+  const data = {};
+  if (title !== undefined) data.title = title;
+  if (baseValue !== undefined) data.baseValue = parseFloat(baseValue);
+  if (maxPerDay !== undefined) data.maxPerDay = Math.max(1, parseInt(maxPerDay));
+  if (isInPool !== undefined) data.isInPool = Boolean(isInPool);
+  const template = await prisma.choreTemplate.update({ where: { id }, data });
   res.json(template);
 });
 
@@ -321,10 +339,12 @@ app.post('/api/chores/:id/approve', async (req, res) => {
 
 app.post('/api/chores/reset', async (req, res) => {
   try {
-    // 1. Compute each kid's current balance before we clear completedDays
+    const weekOf = getWeekOf();
     const chores = await prisma.chore.findMany({ where: { isArchived: false } });
     const kids = await prisma.user.findMany({ where: { role: 'child' } });
+    const selections = await prisma.dailyChoreSelection.findMany({ where: { weekOf } });
 
+    // 1. Compute each kid's current point balance before clearing
     const weeklyEarned = {};
     for (const chore of chores) {
       const ptsPerDay = chorePointsPerDay(chore.baseValue);
@@ -332,8 +352,10 @@ app.post('/api/chores/reset', async (req, res) => {
       const streak = chore.completedDays.length === 7 ? Math.round(ptsPerDay * 0.25) : 0;
       weeklyEarned[chore.assignedTo] = (weeklyEarned[chore.assignedTo] || 0) + earned + streak;
     }
+    for (const s of selections) {
+      weeklyEarned[s.childId] = (weeklyEarned[s.childId] || 0) + chorePointsPerDay(s.baseValue) * s.completions;
+    }
 
-    // Apply existing ledger adjustments (previous carry-forwards and redemptions)
     const existingLedger = await prisma.pointLedger.findMany();
     const ledgerAdj = {};
     for (const e of existingLedger) {
@@ -341,13 +363,12 @@ app.post('/api/chores/reset', async (req, res) => {
       ledgerAdj[e.childId] = (ledgerAdj[e.childId] || 0) + e.amount;
     }
 
-    // 2. Create a carry-forward ledger entry for each kid with their net balance
+    // 2. Create carry-forward ledger entry per kid
     const today = new Date().toISOString().split('T')[0];
     for (const kid of kids) {
       const balance = Math.max(0, (weeklyEarned[kid.id] || 0) + (ledgerAdj[kid.id] || 0));
-      // Remove old non-chore ledger entries for this kid (they're baked into balance now)
       await prisma.pointLedger.deleteMany({
-        where: { childId: kid.id, NOT: [{ reason: { startsWith: 'Completed:' } }, { reason: { startsWith: 'Unchecked:' } }, { reason: { startsWith: '7-day streak bonus:' } }, { reason: { startsWith: 'Streak bonus reversed:' } }] },
+        where: { childId: kid.id, NOT: [{ reason: { startsWith: 'Completed:' } }, { reason: { startsWith: 'Unchecked:' } }, { reason: { startsWith: '7-day streak bonus:' } }, { reason: { startsWith: 'Streak bonus reversed:' } }, { reason: { startsWith: 'Optional:' } }] },
       });
       if (balance > 0) {
         await prisma.pointLedger.create({
@@ -356,11 +377,14 @@ app.post('/api/chores/reset', async (req, res) => {
       }
     }
 
-    // 3. Clear completedDays and approval for the new week
+    // 3. Clear mandatory chore completedDays and approval
     await prisma.chore.updateMany({
       where: { isArchived: false },
       data: { completedDays: [], isApproved: false },
     });
+
+    // 4. Delete daily selections for the week (they reset daily/weekly)
+    await prisma.dailyChoreSelection.deleteMany({ where: { weekOf } });
 
     const allActive = await prisma.chore.findMany({ where: { isArchived: false } });
     res.json(allActive);
@@ -426,7 +450,8 @@ app.post('/api/payouts/:kidId', async (req, res) => {
     where: { assignedTo: kidId, isApproved: true, isArchived: false },
   });
 
-  const totalAmount = approvedChores.reduce((sum, c) => {
+  // Mandatory chore earnings (tier formula)
+  const mandatoryAmount = approvedChores.reduce((sum, c) => {
     const n = c.completedDays.length;
     let earned = 0;
     if (n === 4) earned = c.baseValue * 0.8;
@@ -435,12 +460,23 @@ app.post('/api/payouts/:kidId', async (req, res) => {
     return sum + earned;
   }, 0);
 
+  // Optional chore earnings (per-completion: baseValue / 5)
+  const weekOf = getWeekOf();
+  const selections = await prisma.dailyChoreSelection.findMany({ where: { childId: kidId, weekOf } });
+  const optionalAmount = selections.reduce((sum, s) => sum + optionalDollarPerCompletion(s.baseValue) * s.completions, 0);
+
+  const totalAmount = mandatoryAmount + optionalAmount;
+  const choreNames = [
+    ...approvedChores.map(c => c.title),
+    ...selections.filter(s => s.completions > 0).map(s => `${s.title} (optional ×${s.completions})`),
+  ];
+
   const payout = await prisma.payoutRecord.create({
     data: {
       childId: kidId,
       childName: kid.name,
       amount: Math.round(totalAmount * 100) / 100,
-      choresPaid: approvedChores.map(c => c.title),
+      choresPaid: choreNames,
     },
   });
 
@@ -448,6 +484,9 @@ app.post('/api/payouts/:kidId', async (req, res) => {
     where: { id: { in: approvedChores.map(c => c.id) } },
     data: { completedDays: [], isApproved: false },
   });
+
+  // Delete this week's optional selections after payout
+  await prisma.dailyChoreSelection.deleteMany({ where: { childId: kidId, weekOf } });
 
   const updatedChores = await prisma.chore.findMany({ where: { isArchived: false } });
   res.json({ payout, updatedChores });
@@ -528,6 +567,133 @@ app.post('/api/cash-to-points', async (req, res) => {
   res.json({ cashPayment, ledgerEntry, points, dollarAmount: amount });
 });
 
+// ── Daily Chore Selections (Optional Pool) ────────────────────────────────────
+
+// Compute Monday ISO date string for a given date (used as weekOf key)
+function getWeekOf(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0 ? -6 : 1) - day; // shift to Monday
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
+}
+
+// Points per optional chore completion (same formula as mandatory)
+// Dollar credit per completion: baseValue / 5 (5 completions across week = full value)
+function optionalDollarPerCompletion(baseValue) {
+  return Math.round((baseValue / 5) * 100) / 100;
+}
+
+app.get('/api/daily-selections', async (req, res) => {
+  const { childId, weekOf } = req.query;
+  const where = {};
+  if (childId) where.childId = String(childId);
+  if (weekOf) where.weekOf = String(weekOf);
+  const selections = await prisma.dailyChoreSelection.findMany({
+    where,
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json(selections);
+});
+
+app.post('/api/daily-selections', async (req, res) => {
+  const { childId, childName, templateId, day, weekOf } = req.body;
+  if (!childId || !childName || !templateId || !day || !weekOf) {
+    return res.status(400).json({ error: 'childId, childName, templateId, day, weekOf required' });
+  }
+
+  const template = await prisma.choreTemplate.findUnique({ where: { id: templateId } });
+  if (!template) return res.status(404).json({ error: 'Template not found' });
+  if (!template.isInPool) return res.status(400).json({ error: 'Chore is not available in the pool' });
+
+  // Prevent picking if kid already has this as a mandatory assigned chore
+  const existing = await prisma.chore.findFirst({
+    where: { templateId, assignedTo: childId, isArchived: false },
+  });
+  if (existing) return res.status(400).json({ error: 'This chore is already assigned to you as a mandatory chore' });
+
+  // Create selection (unique constraint handles duplicates)
+  try {
+    const selection = await prisma.dailyChoreSelection.create({
+      data: {
+        childId,
+        childName,
+        templateId,
+        title: template.title,
+        baseValue: template.baseValue,
+        maxPerDay: template.maxPerDay,
+        day,
+        weekOf,
+        completions: 0,
+      },
+    });
+    res.json(selection);
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Already picked this chore today' });
+    }
+    throw err;
+  }
+});
+
+app.post('/api/daily-selections/:id/complete', async (req, res) => {
+  const { id } = req.params;
+  const selection = await prisma.dailyChoreSelection.findUnique({ where: { id } });
+  if (!selection) return res.status(404).json({ error: 'Selection not found' });
+  if (selection.completions >= selection.maxPerDay) {
+    return res.status(400).json({ error: `Already completed ${selection.maxPerDay}× today (max reached)` });
+  }
+
+  const updated = await prisma.dailyChoreSelection.update({
+    where: { id },
+    data: { completions: { increment: 1 } },
+  });
+
+  // Award points
+  const ptsPerCompletion = chorePointsPerDay(selection.baseValue);
+  await prisma.pointLedger.create({
+    data: {
+      childId: selection.childId,
+      amount: ptsPerCompletion,
+      reason: `Optional: ${selection.title} (${selection.day}) ×${updated.completions}`,
+    },
+  });
+
+  // Fire notification for optional chore completion
+  notify(
+    'choreComplete',
+    `⭐ ${selection.childName} earned points!`,
+    `${selection.childName} completed "${selection.title}" (optional) and earned ${ptsPerCompletion} pts`,
+    `<p>⭐ <strong>${selection.childName}</strong> completed <em>${selection.title}</em> (optional pick) on ${selection.day} and earned <strong>+${ptsPerCompletion} pts</strong>.</p>`,
+  ).catch(() => {});
+
+  res.json({ selection: updated, pointsAwarded: ptsPerCompletion });
+});
+
+// Return dollar summary for optional selections (current week, per kid)
+app.get('/api/daily-selections/dollar-summary', async (req, res) => {
+  const weekOf = getWeekOf();
+  const selections = await prisma.dailyChoreSelection.findMany({ where: { weekOf } });
+  const summary = {};
+  for (const s of selections) {
+    summary[s.childId] = (summary[s.childId] || 0) + optionalDollarPerCompletion(s.baseValue) * s.completions;
+  }
+  // Round values
+  for (const id of Object.keys(summary)) summary[id] = Math.round(summary[id] * 100) / 100;
+  res.json(summary);
+});
+
+app.delete('/api/daily-selections/:id', async (req, res) => {
+  const { id } = req.params;
+  const selection = await prisma.dailyChoreSelection.findUnique({ where: { id } });
+  if (!selection) return res.status(404).json({ error: 'Selection not found' });
+  if (selection.completions > 0) {
+    return res.status(400).json({ error: 'Cannot remove a chore you have already started' });
+  }
+  await prisma.dailyChoreSelection.delete({ where: { id } });
+  res.sendStatus(200);
+});
+
 // ── Rewards Endpoints ─────────────────────────────────────────────────────────
 
 app.get('/api/rewards', async (req, res) => {
@@ -569,19 +735,21 @@ app.delete('/api/rewards/:id', async (req, res) => {
 
 // Labels for ledger entries that come from chore toggle events.
 // These are intentionally excluded from the balance sum because
-// completedDays is the authoritative source for current-week earnings.
-const CHORE_ENTRY_PREFIXES = ['Completed:', 'Unchecked:', '7-day streak bonus:', 'Streak bonus reversed:'];
+// completedDays / dailyChoreSelections are the authoritative source.
+const CHORE_ENTRY_PREFIXES = ['Completed:', 'Unchecked:', '7-day streak bonus:', 'Streak bonus reversed:', 'Optional:'];
 function isChoreEntry(reason) {
   return CHORE_ENTRY_PREFIXES.some(p => reason.startsWith(p));
 }
 
 // Get point balances for all kids.
-// Balance = (current week earned from completedDays) + (ledger adjustments:
-//   carry-forward from prior weeks, minus redemptions). Chore completion ledger
-//   entries are ignored here — completedDays is always the accurate source.
+// Balance = (mandatory chore pts from completedDays)
+//         + (optional chore pts from dailyChoreSelections)
+//         + (ledger: carry-forward, redemptions, cash-to-points, etc.)
 app.get('/api/points/balance', async (req, res) => {
   try {
-    // 1. Earned this week — computed from completedDays (matches the chart exactly)
+    const weekOf = getWeekOf();
+
+    // 1. Mandatory chore pts — from completedDays (authoritative)
     const chores = await prisma.chore.findMany({ where: { isArchived: false } });
     const balances = {};
     for (const chore of chores) {
@@ -591,8 +759,14 @@ app.get('/api/points/balance', async (req, res) => {
       balances[chore.assignedTo] = (balances[chore.assignedTo] || 0) + earned + streak;
     }
 
-    // 2. Apply carry-forward (from prior week resets) and redemptions from ledger.
-    //    Skip chore-toggle entries — they're accounted for by completedDays above.
+    // 2. Optional chore pts — from dailyChoreSelections (current week)
+    const selections = await prisma.dailyChoreSelection.findMany({ where: { weekOf } });
+    for (const s of selections) {
+      const ptsPerCompletion = chorePointsPerDay(s.baseValue);
+      balances[s.childId] = (balances[s.childId] || 0) + ptsPerCompletion * s.completions;
+    }
+
+    // 3. Apply carry-forward and redemptions from ledger (skip chore/optional entries).
     const ledger = await prisma.pointLedger.findMany();
     for (const e of ledger) {
       if (isChoreEntry(e.reason)) continue;
@@ -1129,6 +1303,7 @@ app.post('/api/parent/reset', async (req, res) => {
 
 async function runWeeklyCloseOut() {
   console.log('[cron] Starting weekly close-out...');
+  const weekOf = getWeekOf();
 
   const candidates = await prisma.chore.findMany({ where: { isArchived: false, isApproved: false } });
   const eligibleIds = candidates.filter(c => c.completedDays.length >= 4).map(c => c.id);
@@ -1143,9 +1318,12 @@ async function runWeeklyCloseOut() {
     const approvedChores = await prisma.chore.findMany({
       where: { assignedTo: kid.id, isApproved: true, isArchived: false },
     });
-    if (approvedChores.length === 0) continue;
+    const selections = await prisma.dailyChoreSelection.findMany({ where: { childId: kid.id, weekOf } });
+    const optionalAmount = selections.reduce((s, sel) => s + optionalDollarPerCompletion(sel.baseValue) * sel.completions, 0);
 
-    const totalAmount = approvedChores.reduce((sum, c) => {
+    if (approvedChores.length === 0 && optionalAmount === 0) continue;
+
+    const mandatoryAmount = approvedChores.reduce((sum, c) => {
       const n = c.completedDays.length;
       let earned = 0;
       if (n === 4) earned = c.baseValue * 0.8;
@@ -1154,12 +1332,18 @@ async function runWeeklyCloseOut() {
       return sum + earned;
     }, 0);
 
+    const totalAmount = mandatoryAmount + optionalAmount;
+    const choreNames = [
+      ...approvedChores.map(c => c.title),
+      ...selections.filter(s => s.completions > 0).map(s => `${s.title} (optional ×${s.completions})`),
+    ];
+
     await prisma.payoutRecord.create({
       data: {
         childId: kid.id,
         childName: kid.name,
         amount: Math.round(totalAmount * 100) / 100,
-        choresPaid: approvedChores.map(c => c.title),
+        choresPaid: choreNames,
       },
     });
 
@@ -1179,6 +1363,9 @@ async function runWeeklyCloseOut() {
     where: { isArchived: false },
     data: { completedDays: [], isApproved: false },
   });
+
+  // Clear all daily selections for the week
+  await prisma.dailyChoreSelection.deleteMany({ where: { weekOf } });
 
   if (summaryLines.length > 0) {
     notify(

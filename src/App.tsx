@@ -8,6 +8,7 @@ import { usePayouts } from './hooks/usePayouts';
 import { usePoints } from './hooks/usePoints';
 import { useRewards } from './hooks/useRewards';
 import { useToast } from './hooks/useToast';
+import { useDailySelections, getWeekOf } from './hooks/useDailySelections';
 import { MilestoneModal } from './components/MilestoneModal';
 import { ChildView } from './views/ChildView';
 import { ParentView } from './views/ParentView';
@@ -89,6 +90,15 @@ export default function ChoreApp() {
   // Per-kid point ledger (used in ChildView for daily chart)
   const [ledger, setLedger] = useState<import('./types').PointLedgerEntry[]>([]);
 
+  // ── Daily selections (optional chore pool) ────────────────────────────────
+  const {
+    dailySelections,
+    refreshSelections,
+    pickChore,
+    completeChore,
+    unpickChore,
+  } = useDailySelections();
+
   const { toastMsg, showToast } = useToast();
 
   // ── Handle OAuth redirect params ─────────────────────────────────────────
@@ -131,7 +141,13 @@ export default function ChoreApp() {
         if (kidsRes.ok) {
           const data: User[] = await kidsRes.json();
           setKids(data);
-          if (data.length > 0) setActiveKidId(data[0].id);
+          if (data.length > 0) {
+            setActiveKidId(data[0].id);
+            // Fetch daily selections for all kids
+            for (const kid of data) {
+              refreshSelections(kid.id);
+            }
+          }
         }
         if (templatesRes.ok) setChoreTemplates(await templatesRes.json());
         if (choresRes.ok) setChores(await choresRes.json());
@@ -267,6 +283,43 @@ export default function ChoreApp() {
     // Refresh ledger for this kid
     const ledgerData = await fetch(`${API_URL}/api/points/ledger/${childId}`).then(r => r.ok ? r.json() : null);
     if (ledgerData) setLedger(prev => [...prev.filter(e => e.childId !== childId), ...ledgerData]);
+  };
+
+  // ── Pool templates (isInPool, not false) ──────────────────────────────────
+  const poolTemplates = useMemo(
+    () => choreTemplates.filter(t => t.isInPool !== false),
+    [choreTemplates],
+  );
+
+  // Mandatory template IDs assigned to the active kid (to exclude from pool)
+  const activeKidMandatoryTemplateIds = useMemo(() => {
+    const assigned = chores
+      .filter(c => c.assignedTo === activeKidId && !c.isArchived && c.templateId)
+      .map(c => c.templateId as string);
+    return new Set(assigned);
+  }, [chores, activeKidId]);
+
+  // Pool shown to kids = isInPool, not mandatory-assigned to this kid
+  const kidPoolTemplates = useMemo(
+    () => poolTemplates.filter(t => !activeKidMandatoryTemplateIds.has(t.id)),
+    [poolTemplates, activeKidMandatoryTemplateIds],
+  );
+
+  // ── Optional chore handlers ───────────────────────────────────────────────
+  const handlePickChore = async (templateId: string): Promise<void> => {
+    const activeKid = kids.find(k => k.id === activeKidId);
+    if (!activeKid) return;
+    await pickChore(activeKidId, activeKid.name, templateId, selectedDay);
+    await refreshBalances();
+  };
+
+  const handleCompleteOptional = async (selectionId: string): Promise<void> => {
+    await completeChore(selectionId);
+    await refreshBalances();
+  };
+
+  const handleUnpickChore = async (selectionId: string): Promise<void> => {
+    await unpickChore(selectionId);
   };
 
   // ── Bound handlers that thread in shared dependencies ─────────────────────
@@ -485,12 +538,22 @@ export default function ChoreApp() {
           <ChildView
             kids={kids}
             activeKidId={activeKidId}
-            setActiveKidId={setActiveKidId}
+            setActiveKidId={id => {
+              setActiveKidId(id);
+              refreshSelections(id);
+            }}
             selectedDay={selectedDay}
             setSelectedDay={setSelectedDay}
             weekLabel={weekLabel}
             activeKidStats={activeKidStats}
             onToggleDay={handleToggle}
+            poolTemplates={kidPoolTemplates}
+            dailySelections={dailySelections.filter(
+              s => s.childId === activeKidId && s.weekOf === getWeekOf(),
+            )}
+            onPickChore={handlePickChore}
+            onCompleteOptional={handleCompleteOptional}
+            onUnpickChore={handleUnpickChore}
             kidBalance={pointBalances[activeKidId] ?? 0}
             ledger={ledger}
             rewards={rewards}

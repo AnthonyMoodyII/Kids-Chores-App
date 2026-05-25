@@ -35,6 +35,8 @@ export function ManageTab({
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
   const [newTemplateValue, setNewTemplateValue] = useState('5.00');
   const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
+  const [newTemplateMaxPerDay, setNewTemplateMaxPerDay] = useState(1);
+  const [newTemplateIsInPool, setNewTemplateIsInPool] = useState(true);
 
   // Multi-select for chore templates
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
@@ -139,6 +141,8 @@ export function ManageTab({
           title: newTemplateTitle.trim(),
           baseValue: parseFloat(newTemplateValue) || 0,
           isMandatory: newTemplateIsMandatory,
+          maxPerDay: newTemplateMaxPerDay,
+          isInPool: newTemplateIsInPool,
         }),
       });
       if (!response.ok) throw new Error('Failed to create template');
@@ -146,6 +150,8 @@ export function ManageTab({
       setChoreTemplates(prev => [...prev, t]);
       setNewTemplateTitle('');
       setNewTemplateIsMandatory(false);
+      setNewTemplateMaxPerDay(1);
+      setNewTemplateIsInPool(true);
     } catch (error) {
       console.error(error);
     }
@@ -344,9 +350,25 @@ export function ManageTab({
                         {t.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
                         {t.title}
                       </p>
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                        ${t.baseValue.toFixed(2)} / week
-                      </p>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                          ${t.baseValue.toFixed(2)} / week
+                        </p>
+                        {(t.maxPerDay ?? 1) > 1 && (
+                          <span className="inline-flex items-center rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-600">
+                            🔁 ×{t.maxPerDay}/day
+                          </span>
+                        )}
+                        {t.isInPool === false ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
+                            🔒 Private
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-black text-teal-600">
+                            🏊 Pool
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Action buttons */}
@@ -403,10 +425,34 @@ export function ManageTab({
                   <AlertCircle size={16} className="text-rose-500" /> Mandatory chore
                 </span>
               </label>
+              <label className="flex w-fit cursor-pointer select-none items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-5 w-5 cursor-pointer rounded accent-teal-600"
+                  checked={newTemplateIsInPool}
+                  onChange={e => setNewTemplateIsInPool(e.target.checked)}
+                />
+                <span className="text-sm font-black text-slate-700">🏊 Show in optional pool</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-black uppercase tracking-wide text-slate-500">Max per day</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  className="w-20 rounded-xl border border-white bg-white px-3 py-2 font-bold outline-none ring-emerald-500/30 focus:ring-2"
+                  value={newTemplateMaxPerDay}
+                  onChange={e => setNewTemplateMaxPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+                <span className="text-xs text-slate-400">
+                  {newTemplateMaxPerDay === 1 ? 'once/day' : `up to ×${newTemplateMaxPerDay}/day`}
+                </span>
+              </div>
               <div className="flex gap-2">
                 <input
                   type="number"
                   step="0.5"
+                  placeholder="Base value ($)"
                   className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold outline-none ring-emerald-500/30 focus:ring-2"
                   value={newTemplateValue}
                   onChange={e => setNewTemplateValue(e.target.value)}

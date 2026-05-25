@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Circle, AlertCircle, Star, DollarSign, ArrowRightLeft } from 'lucide-react';
-import type { User, DayOfWeek, RewardTemplate, PointLedgerEntry, RedemptionRequest, PayoutRecord, CashPayment } from '../types';
+import { Star, DollarSign, ArrowRightLeft } from 'lucide-react';
+import type { User, DayOfWeek, ChoreTemplate, DailyChoreSelection, RewardTemplate, PointLedgerEntry, RedemptionRequest, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
-import { DAYS, btnBase, btnPress, cardSurface } from '../lib/constants';
-import { getChoreEarnedAmount } from '../lib/earnings';
+import { btnBase, btnPress, cardSurface } from '../lib/constants';
 import { ChoreProgressRows } from '../components/ChoreProgressRows';
 import { PointsBadge } from '../components/PointsBadge';
 import { PointsDailyChart } from '../components/PointsDailyChart';
 import { RewardsCatalog } from '../components/RewardsCatalog';
 import { SuggestRewardForm } from '../components/SuggestRewardForm';
+import { MissionBoard } from '../components/MissionBoard';
+import { WeeklyEarningsTracker } from '../components/WeeklyEarningsTracker';
 
 interface ChildViewProps {
   kids: User[];
@@ -19,6 +20,12 @@ interface ChildViewProps {
   weekLabel: string;
   activeKidStats: KidStats;
   onToggleDay: (choreId: string, day: DayOfWeek) => void;
+  // Mission Board (optional pool)
+  poolTemplates: ChoreTemplate[];
+  dailySelections: DailyChoreSelection[];
+  onPickChore: (templateId: string) => Promise<void>;
+  onCompleteOptional: (selectionId: string) => Promise<void>;
+  onUnpickChore: (selectionId: string) => Promise<void>;
   // Points & Rewards
   kidBalance: number;
   ledger: PointLedgerEntry[];
@@ -67,6 +74,11 @@ export function ChildView({
   weekLabel,
   activeKidStats,
   onToggleDay,
+  poolTemplates,
+  dailySelections,
+  onPickChore,
+  onCompleteOptional,
+  onUnpickChore,
   kidBalance,
   ledger,
   rewards,
@@ -261,101 +273,27 @@ export function ChildView({
         </div>
       )}
 
-      {/* Day selector + chore list */}
-      <div className="flex flex-col gap-6 md:flex-row">
-        <div className="flex w-full gap-2 overflow-x-auto md:w-44 md:flex-col">
-          {DAYS.map(day => (
-            <button
-              key={day}
-              type="button"
-              onClick={() => setSelectedDay(day)}
-              className={`${btnBase} ${btnPress} flex-1 rounded-2xl border-2 p-4 font-bold md:flex-none ${
-                selectedDay === day
-                  ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-violet-200 hover:bg-violet-50'
-              }`}
-            >
-              {day.substring(0, 3)}
-            </button>
-          ))}
-        </div>
+      {/* Mission Board — day tabs + two-column chore board */}
+      <MissionBoard
+        activeKidId={activeKidId}
+        activeKidName={activeKid?.name ?? ''}
+        selectedDay={selectedDay}
+        onSelectDay={setSelectedDay}
+        mandatoryChores={activeKidStats.active}
+        poolTemplates={poolTemplates}
+        dailySelections={dailySelections}
+        onToggleMandatory={onToggleDay}
+        onPickChore={onPickChore}
+        onCompleteOptional={onCompleteOptional}
+        onUnpickChore={onUnpickChore}
+      />
 
-        <div className={`${cardSurface} flex-1 p-6 md:p-10`}>
-          <h2 className="mb-10 text-4xl font-black tracking-tight text-slate-900">
-            {selectedDay}
-          </h2>
-          <div className="space-y-4">
-            {activeKidStats.active.map(chore => {
-              const isDone = chore.completedDays.includes(selectedDay);
-              const earned = getChoreEarnedAmount(chore.completedDays.length, chore.baseValue);
-              const ptsPerDay = 10 + Math.round(chore.baseValue * 4);
-              return (
-                <button
-                  key={chore.id}
-                  type="button"
-                  onClick={() => onToggleDay(chore.id, selectedDay)}
-                  className={`${btnBase} ${btnPress} flex w-full cursor-pointer items-center justify-between gap-4 rounded-[1.75rem] border-2 p-6 text-left transition-colors ${
-                    isDone
-                      ? 'border-emerald-400 bg-emerald-50/90'
-                      : chore.isMandatory
-                        ? 'border-rose-400 bg-rose-50 hover:border-rose-500'
-                        : 'border-slate-200 bg-white hover:border-violet-300'
-                  }`}
-                >
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className={isDone ? 'text-emerald-600' : 'text-slate-400'}>
-                      {isDone ? <CheckCircle2 size={32} /> : <Circle size={32} />}
-                    </div>
-                    <div className="min-w-0">
-                      <p
-                        className={`text-xl font-bold flex flex-wrap items-center gap-2 ${
-                          isDone ? 'text-emerald-900 line-through opacity-50' : 'text-slate-800'
-                        }`}
-                      >
-                        <span>{chore.title}</span>
-                        {chore.isMandatory && (
-                          <span className="inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-600 no-underline opacity-100">
-                            <AlertCircle size={12} /> Mandatory
-                          </span>
-                        )}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-500">
-                        <span>Value: ${chore.baseValue.toFixed(2)}</span>
-                        <span>Current: ${earned.toFixed(2)}</span>
-                        <span className="flex items-center gap-1 text-amber-600">
-                          <span>⭐</span>
-                          <span>+{ptsPerDay} pts/day</span>
-                        </span>
-                      </div>
-                      <div className="mt-2 flex gap-1">
-                        {[...Array(7)].map((_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1 w-3 rounded-full ${
-                              i < chore.completedDays.length
-                                ? chore.isApproved
-                                  ? 'bg-emerald-500'
-                                  : 'bg-violet-400'
-                                : 'bg-slate-200'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <span
-                    className={`shrink-0 text-xl font-black ${
-                      chore.isApproved ? 'text-emerald-600' : 'text-slate-500'
-                    }`}
-                  >
-                    ${earned.toFixed(2)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
+      {/* Weekly earnings tracker */}
+      <WeeklyEarningsTracker
+        mandatoryChores={activeKidStats.active}
+        poolTemplates={poolTemplates}
+        dailySelections={dailySelections.filter(s => s.childId === activeKidId)}
+      />
 
       {/* Rewards catalog */}
       {activeKidId && activeRewards.length > 0 && (
