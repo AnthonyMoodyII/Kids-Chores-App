@@ -250,6 +250,24 @@ export default function ChoreApp() {
   const handleSubmitRewardIdea = async (childId: string, childName: string, title: string, description?: string): Promise<void> => {
     await submitRewardIdea(childId, childName, title, description);
   };
+  const handleCashToPoints = async (childId: string, childName: string, dollarAmount: number): Promise<void> => {
+    const res = await fetch(`${API_URL}/api/cash-to-points`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ childId, childName, dollarAmount }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Conversion failed');
+    }
+    const { cashPayment } = await res.json();
+    // Update local cash payments + refresh point balance
+    setCashPayments(prev => [cashPayment, ...prev]);
+    await refreshBalances();
+    // Refresh ledger for this kid
+    const ledgerData = await fetch(`${API_URL}/api/points/ledger/${childId}`).then(r => r.ok ? r.json() : null);
+    if (ledgerData) setLedger(prev => [...prev.filter(e => e.childId !== childId), ...ledgerData]);
+  };
 
   // ── Bound handlers that thread in shared dependencies ─────────────────────
   const handleToggle = async (choreId: string, day: DayOfWeek) => {
@@ -479,6 +497,9 @@ export default function ChoreApp() {
             redemptionRequests={redemptionRequests}
             onRequestRedemption={handleRequestRedemption}
             onSubmitRewardIdea={handleSubmitRewardIdea}
+            payouts={payouts}
+            cashPayments={cashPayments}
+            onCashToPoints={handleCashToPoints}
           />
         )}
       </div>

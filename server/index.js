@@ -484,6 +484,50 @@ app.delete('/api/cash-payments/:id', async (req, res) => {
   res.sendStatus(200);
 });
 
+// Convert cash owed → points (kid-initiated)
+// $0.50 = 50 pts, i.e. $1 = 100 pts
+app.post('/api/cash-to-points', async (req, res) => {
+  const { childId, childName, dollarAmount } = req.body;
+  if (!childId || !childName || !dollarAmount) {
+    return res.status(400).json({ error: 'childId, childName, and dollarAmount are required' });
+  }
+  const amount = Math.round(parseFloat(dollarAmount) * 100) / 100;
+  if (amount < 0.50) return res.status(400).json({ error: 'Minimum conversion is $0.50' });
+
+  // Verify the kid actually has enough money owed
+  const payouts = await prisma.payoutRecord.findMany({ where: { childId } });
+  const payments = await prisma.cashPayment.findMany({ where: { childId } });
+  const totalEarned = payouts.reduce((s, p) => s + p.amount, 0);
+  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+  const owed = Math.round((totalEarned - totalPaid) * 100) / 100;
+  if (amount > owed + 0.001) {
+    return res.status(400).json({ error: `Only $${owed.toFixed(2)} is owed` });
+  }
+
+  const points = Math.round(amount * 100); // $1 = 100 pts
+
+  // Mark the cash as "received" (converted to points instead of handed over)
+  const cashPayment = await prisma.cashPayment.create({
+    data: {
+      childId,
+      childName,
+      amount,
+      note: `Converted to ${points} pts`,
+    },
+  });
+
+  // Award the points via the ledger
+  const ledgerEntry = await prisma.pointLedger.create({
+    data: {
+      childId,
+      amount: points,
+      reason: `Cash converted to points: $${amount.toFixed(2)}`,
+    },
+  });
+
+  res.json({ cashPayment, ledgerEntry, points, dollarAmount: amount });
+});
+
 // ── Rewards Endpoints ─────────────────────────────────────────────────────────
 
 app.get('/api/rewards', async (req, res) => {

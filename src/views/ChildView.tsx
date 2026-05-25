@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Circle, AlertCircle, Star } from 'lucide-react';
-import type { User, DayOfWeek, RewardTemplate, PointLedgerEntry, RedemptionRequest } from '../types';
+import { CheckCircle2, Circle, AlertCircle, Star, DollarSign, ArrowRightLeft } from 'lucide-react';
+import type { User, DayOfWeek, RewardTemplate, PointLedgerEntry, RedemptionRequest, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { DAYS, btnBase, btnPress, cardSurface } from '../lib/constants';
 import { getChoreEarnedAmount } from '../lib/earnings';
@@ -26,6 +26,10 @@ interface ChildViewProps {
   redemptionRequests: RedemptionRequest[];
   onRequestRedemption: (childId: string, childName: string, rewardTemplateId: string) => Promise<void>;
   onSubmitRewardIdea: (childId: string, childName: string, title: string, description?: string) => Promise<void>;
+  // Cash → Points
+  payouts: PayoutRecord[];
+  cashPayments: CashPayment[];
+  onCashToPoints: (childId: string, childName: string, dollarAmount: number) => Promise<void>;
 }
 
 function useGoalRewardIds(kidId: string) {
@@ -69,6 +73,9 @@ export function ChildView({
   redemptionRequests,
   onRequestRedemption,
   onSubmitRewardIdea,
+  payouts,
+  cashPayments,
+  onCashToPoints,
 }: ChildViewProps) {
   const { goalRewardIds, toggleGoal } = useGoalRewardIds(activeKidId);
   const activeKid = kids.find(k => k.id === activeKidId);
@@ -86,6 +93,38 @@ export function ChildView({
   const todayPoints = ledger
     .filter(e => e.childId === activeKidId && e.amount > 0 && new Date(e.createdAt) >= today && new Date(e.createdAt) < tomorrow)
     .reduce((sum, e) => sum + e.amount, 0);
+
+  // Money owed to this kid (PayoutRecords - CashPayments)
+  const totalEarned = payouts
+    .filter(p => p.childId === activeKidId)
+    .reduce((s, p) => s + p.amount, 0);
+  const totalPaid = cashPayments
+    .filter(p => p.childId === activeKidId)
+    .reduce((s, p) => s + p.amount, 0);
+  const moneyOwed = Math.max(0, Math.round((totalEarned - totalPaid) * 100) / 100);
+
+  // Cash → Points conversion state
+  const [convertAmount, setConvertAmount] = useState(0.5);
+  const [converting, setConverting] = useState(false);
+  const [convertSuccess, setConvertSuccess] = useState(false);
+  const convertPoints = Math.round(convertAmount * 100);
+  // Build $0.50 increment steps up to owed amount
+  const maxSteps = Math.floor(moneyOwed / 0.5);
+  const convertSteps = Array.from({ length: maxSteps }, (_, i) => Math.round((i + 1) * 0.5 * 100) / 100);
+
+  const handleConvert = async () => {
+    if (!activeKid || converting || convertAmount > moneyOwed) return;
+    setConverting(true);
+    try {
+      await onCashToPoints(activeKidId, activeKid.name, convertAmount);
+      setConvertSuccess(true);
+      setTimeout(() => setConvertSuccess(false), 3000);
+    } catch (err) {
+      console.error('Cash to points error:', err);
+    } finally {
+      setConverting(false);
+    }
+  };
 
   return (
     <div className="animate-in slide-in-from-right-4 mx-auto max-w-6xl space-y-6 duration-500">
@@ -124,6 +163,75 @@ export function ChildView({
             </div>
           </div>
           <PointsBadge points={kidBalance} todayPoints={todayPoints} size="lg" />
+        </div>
+      )}
+
+      {/* Cash → Points conversion card */}
+      {activeKidId && moneyOwed >= 0.5 && (
+        <div className="rounded-3xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-6 py-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-100">
+              <DollarSign size={18} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-emerald-800">
+                💵 ${moneyOwed.toFixed(2)} owed to you
+              </p>
+              <p className="text-xs text-emerald-600">Convert your cash into points to spend on rewards!</p>
+            </div>
+          </div>
+
+          {/* Amount selector */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {convertSteps.slice(0, 8).map(amt => (
+              <button
+                key={amt}
+                type="button"
+                onClick={() => setConvertAmount(amt)}
+                className={`${btnBase} ${btnPress} rounded-xl border-2 px-3 py-1.5 text-sm font-black transition-all ${
+                  convertAmount === amt
+                    ? 'border-emerald-500 bg-emerald-600 text-white shadow-md shadow-emerald-500/30'
+                    : 'border-emerald-200 bg-white text-emerald-700 hover:border-emerald-400'
+                }`}
+              >
+                ${amt.toFixed(2)}
+              </button>
+            ))}
+            {convertSteps.length > 8 && (
+              <select
+                className="rounded-xl border-2 border-emerald-200 bg-white px-3 py-1.5 text-sm font-black text-emerald-700 outline-none"
+                value={convertAmount}
+                onChange={e => setConvertAmount(parseFloat(e.target.value))}
+              >
+                {convertSteps.map(amt => (
+                  <option key={amt} value={amt}>${amt.toFixed(2)}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Conversion summary + confirm */}
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-sm font-black text-emerald-800">
+              <span className="text-lg">💵</span>
+              <span>${convertAmount.toFixed(2)}</span>
+              <ArrowRightLeft size={14} className="text-emerald-500" />
+              <span className="text-amber-600">⭐ {convertPoints} pts</span>
+              <span className="text-xs font-bold text-emerald-500">($0.50 = 50 pts)</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleConvert}
+              disabled={converting || convertSuccess}
+              className={`${btnBase} ${btnPress} rounded-2xl px-6 py-2.5 font-black text-white shadow-lg transition-all disabled:pointer-events-none disabled:opacity-60 ${
+                convertSuccess
+                  ? 'bg-emerald-500 shadow-emerald-500/30'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-500/30'
+              }`}
+            >
+              {convertSuccess ? '✅ Converted!' : converting ? 'Converting…' : `Convert to ${convertPoints} pts`}
+            </button>
+          </div>
         </div>
       )}
 
