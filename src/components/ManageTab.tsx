@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, RewardTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
@@ -87,8 +87,43 @@ export function ManageTab({
     });
   };
 
-  // Helper: render either a URL image or an emoji string
-  const isIconUrl = (s: string) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+  // Shared file input ref — one element, works for whichever picker is open
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleIconFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        // Resize to 64×64 so the data URL stays small enough for localStorage
+        const size = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL('image/png');
+        saveCustomIcon(dataUrl);
+        const target = emojiPickerOpen; // capture before closing
+        if (target === 'new') {
+          setNewRewardIcon(dataUrl);
+        } else if (target) {
+          onUpdateReward(target, { icon: dataUrl });
+        }
+        setEmojiPickerOpen(null);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // allow re-selecting the same file next time
+  };
+
+  // Helper: render either a URL / data-URL image or an emoji string
+  const isIconUrl = (s: string) =>
+    s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/') || s.startsWith('data:');
   const renderIcon = (icon: string, className = 'text-2xl') =>
     isIconUrl(icon)
       ? <img src={icon} className="h-6 w-6 object-contain" alt="icon" />
@@ -348,6 +383,14 @@ export function ManageTab({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Hidden file input shared by all icon pickers */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleIconFileUpload}
+      />
 
       {/* ── Top row: Library + Assignment workspace ────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -1025,6 +1068,17 @@ export function ManageTab({
                                     </div>
                                     {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
                                   </div>
+                                  {/* Upload from file */}
+                                  <div className="border-t border-slate-100 pt-2">
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
+                                    <button
+                                      type="button"
+                                      onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                                      className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700`}
+                                    >
+                                      📁 Upload PNG / image file
+                                    </button>
+                                  </div>
                                   {/* Magnific link */}
                                   <a
                                     href="https://www.magnific.com/icons/copy-paste"
@@ -1213,6 +1267,17 @@ export function ManageTab({
                               >Use</button>
                             </div>
                             {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
+                          </div>
+                          {/* Upload from file */}
+                          <div className="border-t border-slate-100 pt-2">
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                              className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700`}
+                            >
+                              📁 Upload PNG / image file
+                            </button>
                           </div>
                           {/* Magnific link */}
                           <a
