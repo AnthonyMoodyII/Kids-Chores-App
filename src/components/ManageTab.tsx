@@ -671,13 +671,24 @@ export function ManageTab({
 
           {/* Kid selection */}
           <div>
-            <p className="mb-2 text-xs font-black uppercase tracking-widest text-slate-400">
-              Apply to kids
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                Apply to kids
+              </p>
+              {selectedKidIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedKidIds(new Set())}
+                  className={`${btnBase} text-[11px] font-bold text-slate-400 hover:text-rose-500`}
+                >
+                  Deselect all
+                </button>
+              )}
+            </div>
             {kids.length === 0 ? (
               <p className="text-sm italic text-slate-400">No kids added yet.</p>
             ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-2">
                 {kids.map(k => {
                   const isOn = selectedKidIds.has(k.id);
                   const aCount = alreadyAssignedCount(k.id);
@@ -688,49 +699,53 @@ export function ManageTab({
                       key={k.id}
                       type="button"
                       onClick={() => toggleKid(k.id)}
-                      className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-full border-2 px-4 py-2 text-sm font-bold transition-all ${
+                      className={`${btnBase} ${btnPress} flex w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all ${
                         isOn
-                          ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
-                          : allAssigned
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                          : someAssigned
-                          ? 'border-amber-300 bg-amber-50 text-amber-700'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-violet-200'
+                          ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-200/60'
+                          : 'border-slate-200 bg-white hover:border-violet-200 hover:bg-violet-50/30'
                       }`}
                     >
-                      {!isOn && allAssigned && <Check size={13} />}
-                      {k.name}
-                      {!isOn && selectedTemplates.length > 0 && (
-                        <span className={`text-[10px] font-black ${
-                          isOn ? 'text-violet-200' : allAssigned ? 'text-emerald-500' : someAssigned ? 'text-amber-500' : 'text-slate-300'
-                        }`}>
-                          {aCount}/{selectedTemplates.length}
-                        </span>
-                      )}
+                      {/* Checkbox indicator — matches chore library style */}
+                      <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+                        isOn
+                          ? 'border-violet-500 bg-violet-600'
+                          : 'border-slate-300'
+                      }`}>
+                        {isOn && <Check size={12} strokeWidth={3} className="text-white" />}
+                      </div>
+
+                      {/* Name + status */}
+                      <div className="min-w-0 flex-1">
+                        <p className={`font-bold ${isOn ? 'text-violet-900' : 'text-slate-800'}`}>
+                          {k.name}
+                        </p>
+                        {selectedTemplates.length > 0 && (
+                          <p className={`text-[11px] font-bold ${
+                            allAssigned ? 'text-emerald-600' : someAssigned ? 'text-amber-600' : 'text-slate-400'
+                          }`}>
+                            {allAssigned
+                              ? '✓ All selected chores already assigned'
+                              : someAssigned
+                              ? `${aCount} of ${selectedTemplates.length} chores already assigned`
+                              : 'None of the selected chores assigned yet'}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Selected / not selected pill */}
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black transition-colors ${
+                        isOn
+                          ? 'bg-violet-600 text-white'
+                          : 'bg-slate-100 text-slate-400'
+                      }`}>
+                        {isOn ? 'Selected' : 'Select'}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             )}
-            {selectedKidIds.size > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedKidIds(new Set())}
-                className={`${btnBase} mt-2 text-xs font-bold text-slate-400 hover:text-rose-500`}
-              >
-                Clear selection
-              </button>
-            )}
           </div>
-
-          {/* Legend */}
-          {selectedTemplates.length > 0 && kids.length > 0 && (
-            <div className="flex flex-wrap gap-3 text-[11px] font-bold text-slate-400">
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" /> All assigned</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /> Partial</span>
-              <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-slate-300" /> None</span>
-            </div>
-          )}
 
           {/* Action buttons */}
           <div className="mt-auto grid gap-3">
