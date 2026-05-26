@@ -65,6 +65,34 @@ export function ManageTab({
   const [newRewardDesc, setNewRewardDesc] = useState('');
   const [rewardCatalogOpen, setRewardCatalogOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null); // reward id or 'new'
+  const [urlIconInput, setUrlIconInput] = useState('');
+  const [urlIconError, setUrlIconError] = useState('');
+
+  // Custom icon URLs saved by user (persisted in localStorage)
+  const [customIcons, setCustomIcons] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('customRewardIcons') || '[]'); } catch { return []; }
+  });
+  const saveCustomIcon = (url: string) => {
+    setCustomIcons(prev => {
+      const next = [url, ...prev.filter(u => u !== url)].slice(0, 20);
+      localStorage.setItem('customRewardIcons', JSON.stringify(next));
+      return next;
+    });
+  };
+  const removeCustomIcon = (url: string) => {
+    setCustomIcons(prev => {
+      const next = prev.filter(u => u !== url);
+      localStorage.setItem('customRewardIcons', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Helper: render either a URL image or an emoji string
+  const isIconUrl = (s: string) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/');
+  const renderIcon = (icon: string, className = 'text-2xl') =>
+    isIconUrl(icon)
+      ? <img src={icon} className="h-6 w-6 object-contain" alt="icon" />
+      : <span className={className}>{icon}</span>;
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const selectedKid = kids.find(k => k.id === selectedViewKidId) ?? null;
@@ -846,16 +874,44 @@ export function ManageTab({
                           <div className="relative shrink-0">
                             <button
                               type="button"
-                              onClick={() => setEmojiPickerOpen(emojiPickerOpen === r.id ? null : r.id)}
-                              className={`${btnBase} flex h-9 w-9 items-center justify-center rounded-xl text-2xl hover:bg-amber-100`}
+                              onClick={() => { setUrlIconInput(''); setUrlIconError(''); setEmojiPickerOpen(emojiPickerOpen === r.id ? null : r.id); }}
+                              className={`${btnBase} flex h-9 w-9 items-center justify-center rounded-xl hover:bg-amber-100`}
                               title="Change icon"
                             >
-                              {r.icon || '🎁'}
+                              {renderIcon(r.icon || '🎁')}
                             </button>
                             {emojiPickerOpen === r.id && (
                               <>
                                 <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
                                 <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
+                                  {/* Custom URL icons row */}
+                                  {customIcons.length > 0 && (
+                                    <div className="mb-2">
+                                      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {customIcons.map(url => (
+                                          <div key={url} className="group relative">
+                                            <button
+                                              type="button"
+                                              onClick={() => { onUpdateReward(r.id, { icon: url }); setEmojiPickerOpen(null); }}
+                                              className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50`}
+                                              title={url}
+                                            >
+                                              <img src={url} className="h-6 w-6 object-contain" alt="icon" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={e => { e.stopPropagation(); removeCustomIcon(url); }}
+                                              className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
+                                              title="Remove"
+                                            >×</button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <hr className="my-2 border-slate-100" />
+                                    </div>
+                                  )}
+                                  {/* Emoji grid */}
                                   <div className="grid grid-cols-10 gap-0.5 mb-2">
                                     {EMOJI_OPTIONS.map(e => (
                                       <button
@@ -866,11 +922,40 @@ export function ManageTab({
                                       >{e}</button>
                                     ))}
                                   </div>
+                                  {/* URL import section */}
+                                  <div className="border-t border-slate-100 pt-2">
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="url"
+                                        placeholder="https://..."
+                                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-amber-400/30 focus:border-amber-300 focus:ring-2"
+                                        value={urlIconInput}
+                                        onChange={e => { setUrlIconInput(e.target.value); setUrlIconError(''); }}
+                                        onClick={e => e.stopPropagation()}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={e => {
+                                          e.stopPropagation();
+                                          const url = urlIconInput.trim();
+                                          if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
+                                          saveCustomIcon(url);
+                                          onUpdateReward(r.id, { icon: url });
+                                          setUrlIconInput('');
+                                          setEmojiPickerOpen(null);
+                                        }}
+                                        className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-amber-500 px-2 py-1 text-xs font-black text-white`}
+                                      >Use</button>
+                                    </div>
+                                    {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
+                                  </div>
+                                  {/* Magnific link */}
                                   <a
                                     href="https://www.magnific.com/icons/copy-paste"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
+                                    className="mt-2 flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
                                     onClick={() => setEmojiPickerOpen(null)}
                                   >
                                     🔍 Browse more icons at Magnific →
@@ -978,16 +1063,44 @@ export function ManageTab({
                   <div className="relative shrink-0">
                     <button
                       type="button"
-                      onClick={() => setEmojiPickerOpen(emojiPickerOpen === 'new' ? null : 'new')}
-                      className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white text-2xl hover:border-amber-300`}
+                      onClick={() => { setUrlIconInput(''); setUrlIconError(''); setEmojiPickerOpen(emojiPickerOpen === 'new' ? null : 'new'); }}
+                      className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white hover:border-amber-300`}
                       title="Pick icon"
                     >
-                      {newRewardIcon}
+                      {renderIcon(newRewardIcon, 'text-2xl')}
                     </button>
                     {emojiPickerOpen === 'new' && (
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
                         <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
+                          {/* Custom URL icons row */}
+                          {customIcons.length > 0 && (
+                            <div className="mb-2">
+                              <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
+                              <div className="flex flex-wrap gap-1">
+                                {customIcons.map(url => (
+                                  <div key={url} className="group relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => { setNewRewardIcon(url); setEmojiPickerOpen(null); }}
+                                      className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50`}
+                                      title={url}
+                                    >
+                                      <img src={url} className="h-6 w-6 object-contain" alt="icon" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={e => { e.stopPropagation(); removeCustomIcon(url); }}
+                                      className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
+                                      title="Remove"
+                                    >×</button>
+                                  </div>
+                                ))}
+                              </div>
+                              <hr className="my-2 border-slate-100" />
+                            </div>
+                          )}
+                          {/* Emoji grid */}
                           <div className="grid grid-cols-10 gap-0.5 mb-2">
                             {EMOJI_OPTIONS.map(e => (
                               <button
@@ -998,11 +1111,40 @@ export function ManageTab({
                               >{e}</button>
                             ))}
                           </div>
+                          {/* URL import section */}
+                          <div className="border-t border-slate-100 pt-2">
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
+                            <div className="flex gap-1">
+                              <input
+                                type="url"
+                                placeholder="https://..."
+                                className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-amber-400/30 focus:border-amber-300 focus:ring-2"
+                                value={urlIconInput}
+                                onChange={e => { setUrlIconInput(e.target.value); setUrlIconError(''); }}
+                                onClick={e => e.stopPropagation()}
+                              />
+                              <button
+                                type="button"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  const url = urlIconInput.trim();
+                                  if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
+                                  saveCustomIcon(url);
+                                  setNewRewardIcon(url);
+                                  setUrlIconInput('');
+                                  setEmojiPickerOpen(null);
+                                }}
+                                className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-amber-500 px-2 py-1 text-xs font-black text-white`}
+                              >Use</button>
+                            </div>
+                            {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
+                          </div>
+                          {/* Magnific link */}
                           <a
                             href="https://www.magnific.com/icons/copy-paste"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
+                            className="mt-2 flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
                             onClick={() => setEmojiPickerOpen(null)}
                           >
                             🔍 Browse more icons at Magnific →
