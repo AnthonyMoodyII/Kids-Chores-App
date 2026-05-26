@@ -845,6 +845,66 @@ export function ManageTab({
       </section>
 
       {/* ── Kid chores viewer ──────────────────────────────────────────────── */}
+      {selectedKid && (
+        <section className={`${cardSurface} p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <h3 className="text-lg font-black flex items-center gap-3 text-slate-900">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+                <ListChecks size={22} />
+              </span>
+              {selectedKid.name}&apos;s chores
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-500">
+                {selectedKidChores.length}
+              </span>
+            </h3>
+            <button
+              type="button"
+              onClick={() => setSelectedViewKidId(null)}
+              className={`${btnBase} ${btnPress} flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-700`}
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {selectedKidChores.length === 0 ? (
+            <p className="py-8 text-center text-sm italic text-slate-400">
+              No chores assigned to {selectedKid.name} yet.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {selectedKidChores.map(chore => (
+                <div
+                  key={chore.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm shadow-slate-100"
+                >
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 truncate font-bold text-slate-900">
+                      {chore.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
+                      {chore.title}
+                    </p>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
+                      ${chore.baseValue.toFixed(2)} / week
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (chore.templateId) handleUnassignSingle(chore.templateId, selectedKid.id);
+                    }}
+                    disabled={!chore.templateId}
+                    className={`${btnBase} ${btnPress} shrink-0 rounded-xl border border-slate-200 p-2 text-slate-300 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 disabled:pointer-events-none disabled:opacity-30`}
+                    title={`Remove ${chore.title} from ${selectedKid.name}`}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* ── Rewards Catalog ───────────────────────────────────────────────── */}
       <section className={`${cardSurface} p-6 md:p-8`}>
         <button
@@ -1222,65 +1282,6 @@ export function ManageTab({
         )}
       </section>
 
-      {selectedKid && (
-        <section className={`${cardSurface} p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <h3 className="text-lg font-black flex items-center gap-3 text-slate-900">
-              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
-                <ListChecks size={22} />
-              </span>
-              {selectedKid.name}&apos;s chores
-              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-black text-slate-500">
-                {selectedKidChores.length}
-              </span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setSelectedViewKidId(null)}
-              className={`${btnBase} ${btnPress} flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-700`}
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {selectedKidChores.length === 0 ? (
-            <p className="py-8 text-center text-sm italic text-slate-400">
-              No chores assigned to {selectedKid.name} yet.
-            </p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {selectedKidChores.map(chore => (
-                <div
-                  key={chore.id}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm shadow-slate-100"
-                >
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 truncate font-bold text-slate-900">
-                      {chore.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
-                      {chore.title}
-                    </p>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                      ${chore.baseValue.toFixed(2)} / week
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (chore.templateId) handleUnassignSingle(chore.templateId, selectedKid.id);
-                    }}
-                    disabled={!chore.templateId}
-                    className={`${btnBase} ${btnPress} shrink-0 rounded-xl border border-slate-200 p-2 text-slate-300 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 disabled:pointer-events-none disabled:opacity-30`}
-                    title={`Remove ${chore.title} from ${selectedKid.name}`}
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
     </div>
   );
 }
