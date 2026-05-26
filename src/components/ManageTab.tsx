@@ -35,14 +35,14 @@ export function ManageTab({
   const [newTemplateTitle, setNewTemplateTitle] = useState('');
   const [newTemplateValue, setNewTemplateValue] = useState('5.00');
   const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
-  const [newTemplateMaxPerDay, setNewTemplateMaxPerDay] = useState(1);
+  const [newTemplateMaxPerDay, setNewTemplateMaxPerDay] = useState('1');
   const [newTemplateIsInPool, setNewTemplateIsInPool] = useState(true);
 
   // Inline editing of existing templates
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editValue, setEditValue] = useState('');
-  const [editMaxPerDay, setEditMaxPerDay] = useState(1);
+  const [editMaxPerDay, setEditMaxPerDay] = useState('1');
   const [editIsInPool, setEditIsInPool] = useState(true);
   const [editSaving, setEditSaving] = useState(false);
 
@@ -212,7 +212,7 @@ export function ManageTab({
           title: newTemplateTitle.trim(),
           baseValue: parseFloat(newTemplateValue) || 0,
           isMandatory: newTemplateIsMandatory,
-          maxPerDay: newTemplateMaxPerDay,
+          maxPerDay: Math.min(10, Math.max(1, parseInt(newTemplateMaxPerDay) || 1)),
           isInPool: newTemplateIsInPool,
         }),
       });
@@ -221,7 +221,7 @@ export function ManageTab({
       setChoreTemplates(prev => [...prev, t]);
       setNewTemplateTitle('');
       setNewTemplateIsMandatory(false);
-      setNewTemplateMaxPerDay(1);
+      setNewTemplateMaxPerDay('1');
       setNewTemplateIsInPool(true);
     } catch (error) {
       console.error(error);
@@ -264,7 +264,7 @@ export function ManageTab({
     setEditingTemplateId(t.id);
     setEditTitle(t.title);
     setEditValue(t.baseValue.toFixed(2));
-    setEditMaxPerDay(t.maxPerDay ?? 1);
+    setEditMaxPerDay(String(t.maxPerDay ?? 1));
     setEditIsInPool(t.isInPool !== false);
   };
 
@@ -281,7 +281,7 @@ export function ManageTab({
         body: JSON.stringify({
           title: editTitle.trim(),
           baseValue: parseFloat(editValue) || 0,
-          maxPerDay: editMaxPerDay,
+          maxPerDay: Math.min(10, Math.max(1, parseInt(editMaxPerDay) || 1)),
           isInPool: editIsInPool,
         }),
       });
@@ -481,10 +481,10 @@ export function ManageTab({
                               max={10}
                               className="w-20 rounded-xl border border-white bg-white px-3 py-2 font-bold outline-none ring-indigo-400/30 focus:ring-2"
                               value={editMaxPerDay}
-                              onChange={e => setEditMaxPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                              onChange={e => setEditMaxPerDay(e.target.value)}
                             />
                             <span className="text-xs text-slate-400">
-                              {editMaxPerDay === 1 ? 'once/day' : `×${editMaxPerDay}/day`}
+                              {(parseInt(editMaxPerDay) || 1) <= 1 ? 'once/day' : `×${parseInt(editMaxPerDay)}/day`}
                             </span>
                           </div>
                         </div>
@@ -644,10 +644,10 @@ export function ManageTab({
                   max={10}
                   className="w-20 rounded-xl border border-white bg-white px-3 py-2 font-bold outline-none ring-emerald-500/30 focus:ring-2"
                   value={newTemplateMaxPerDay}
-                  onChange={e => setNewTemplateMaxPerDay(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={e => setNewTemplateMaxPerDay(e.target.value)}
                 />
                 <span className="text-xs text-slate-400">
-                  {newTemplateMaxPerDay === 1 ? 'once/day' : `up to ×${newTemplateMaxPerDay}/day`}
+                  {(parseInt(newTemplateMaxPerDay) || 1) <= 1 ? 'once/day' : `up to ×${parseInt(newTemplateMaxPerDay)}/day`}
                 </span>
               </div>
               <div className="flex gap-2">
