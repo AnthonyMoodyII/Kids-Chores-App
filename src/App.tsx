@@ -118,6 +118,16 @@ export default function ChoreApp() {
       setView('parent');
       window.history.replaceState({}, '', '/');
     }
+    const approval = params.get('reward_approval');
+    if (approval === 'approved') {
+      const kid = params.get('kid') || 'Kid';
+      const reward = params.get('reward') || 'reward';
+      showToast(`✅ Approved! ${kid}'s "${reward}" is now in their stash.`);
+      window.history.replaceState({}, '', '/');
+    } else if (approval === 'already_approved') {
+      showToast('This reward was already approved.');
+      window.history.replaceState({}, '', '/');
+    }
   }, []);
 
   // ── Bootstrap data from API ───────────────────────────────────────────────

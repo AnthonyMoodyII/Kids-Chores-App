@@ -28,19 +28,29 @@ async function getNotifSettings() {
   return prisma.notificationSettings.findUnique({ where: { id: 'singleton' } });
 }
 
-async function sendPushover(title, message) {
+// Resolve base URL without a request object (for async notifications)
+function getBaseUrl() {
+  return (process.env.APP_URL || 'http://localhost:8080').replace(/\/$/, '');
+}
+
+async function sendPushover(title, message, actionUrl = null) {
   try {
     const ns = await getNotifSettings();
     if (!ns || !ns.pushoverEnabled || !ns.pushoverAppToken || !ns.pushoverUserKey) return;
+    const body = {
+      token: ns.pushoverAppToken,
+      user: ns.pushoverUserKey,
+      title,
+      message,
+    };
+    if (actionUrl) {
+      body.url = actionUrl;
+      body.url_title = '✅ Approve now';
+    }
     await fetch('https://api.pushover.net/1/messages.json', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        token: ns.pushoverAppToken,
-        user: ns.pushoverUserKey,
-        title,
-        message,
-      }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     });
   } catch (err) {
@@ -69,18 +79,22 @@ async function sendEmail(subject, htmlBody) {
   }
 }
 
-async function sendGotify(provider, title, message) {
+async function sendGotify(provider, title, message, actionUrl = null) {
   try {
     const { url, token, priority = 5 } = provider.config || {};
     if (!url || !token) return;
     const endpoint = url.replace(/\/$/, '') + '/message';
+    // Append deep link to message if provided (Gotify renders markdown)
+    const fullMessage = actionUrl
+      ? `${message}\n\n[✅ Approve now](${actionUrl})`
+      : message;
     await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ title, message, priority: Number(priority) }),
+      body: JSON.stringify({ title, message: fullMessage, priority: Number(priority) }),
       signal: AbortSignal.timeout(8000),
     });
   } catch (err) {
@@ -88,7 +102,7 @@ async function sendGotify(provider, title, message) {
   }
 }
 
-async function notify(event, title, message, htmlBody) {
+async function notify(event, title, message, htmlBody, actionUrl = null) {
   const ns = await getNotifSettings();
   if (!ns) return;
   const eventMap = {
@@ -104,12 +118,12 @@ async function notify(event, title, message, htmlBody) {
   // Fan out to all enabled providers
   const providers = await prisma.notificationProvider.findMany({ where: { enabled: true } });
   const providerSends = providers.map(p => {
-    if (p.type === 'gotify') return sendGotify(p, title, message);
+    if (p.type === 'gotify') return sendGotify(p, title, message, actionUrl);
     return Promise.resolve();
   });
 
   await Promise.all([
-    sendPushover(title, message),
+    sendPushover(title, message, actionUrl),
     sendEmail(title, htmlBody || `<p>${message}</p>`),
     ...providerSends,
   ]);
@@ -944,6 +958,7 @@ app.post('/api/redemption-requests', async (req, res) => {
     data: { status: 'cancelled' },
   });
 
+  const approvalToken = crypto.randomBytes(24).toString('hex');
   const request = await prisma.redemptionRequest.create({
     data: {
       childId,
@@ -951,17 +966,85 @@ app.post('/api/redemption-requests', async (req, res) => {
       rewardTemplateId,
       rewardTitle: reward.title,
       pointCost: reward.pointCost,
+      approvalToken,
     },
   });
 
+  const approvalUrl = `${getBaseUrl()}/api/approve-reward?token=${approvalToken}`;
   notify(
     'rewardRequest',
     `🎁 ${childName} wants a reward`,
-    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts). Open the app to approve.`,
-    `<p>🎁 <strong>${childName}</strong> wants to redeem <em>${reward.title}</em> (<strong>${reward.pointCost} pts</strong>).</p><p>Open the parent portal to approve.</p>`,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).`,
+    `<p>🎁 <strong>${childName}</strong> wants to redeem <em>${reward.title}</em> (<strong>${reward.pointCost} pts</strong>).</p>
+<p style="margin-top:16px">
+  <a href="${approvalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">✅ Approve Now</a>
+</p>
+<p style="font-size:12px;color:#64748b;margin-top:8px">Or open the parent portal to approve from the dashboard.</p>`,
+    approvalUrl,
   ).catch(() => {});
 
   res.json(request);
+});
+
+// ── One-click approval via deep link (no login required) ─────────────────────
+app.get('/api/approve-reward', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('Missing token.');
+
+  const request = await prisma.redemptionRequest.findUnique({ where: { approvalToken: String(token) } });
+  if (!request) return res.status(404).send('Invalid or expired approval link.');
+  if (request.status !== 'pending') {
+    // Already handled — redirect to app with a message
+    const appUrl = getBaseUrl();
+    const msg = request.status === 'approved' ? 'already_approved' : 'already_handled';
+    return res.redirect(`${appUrl}/?reward_approval=${msg}`);
+  }
+
+  const kid = await prisma.user.findUnique({ where: { id: request.childId } });
+  const reward = await prisma.rewardTemplate.findUnique({ where: { id: request.rewardTemplateId } });
+
+  // Check balance
+  const ledger = await prisma.pointLedger.findMany({ where: { childId: request.childId } });
+  const balance = ledger.reduce((s, e) => s + e.amount, 0);
+  if (balance < request.pointCost) {
+    return res.status(400).send(
+      `<html><body style="font-family:sans-serif;padding:2rem">
+        <h2>❌ Insufficient points</h2>
+        <p>${request.childName} only has ${balance} pts but this reward costs ${request.pointCost} pts.</p>
+        <p><a href="${getBaseUrl()}">← Back to app</a></p>
+      </body></html>`
+    );
+  }
+
+  // Deduct points + create redemption
+  await prisma.pointLedger.create({
+    data: { childId: request.childId, amount: -request.pointCost, reason: `Redeemed: ${request.rewardTitle}` },
+  });
+  await prisma.rewardRedemption.create({
+    data: {
+      childId: request.childId,
+      childName: request.childName,
+      rewardTemplateId: request.rewardTemplateId,
+      rewardTitle: request.rewardTitle,
+      pointCost: request.pointCost,
+    },
+  });
+  // Consume token — mark approved and clear token so link can't be reused
+  await prisma.redemptionRequest.update({
+    where: { id: request.id },
+    data: { status: 'approved', approvalToken: null },
+  });
+
+  notify(
+    'rewardApproved',
+    `🎁 ${request.childName} redeemed a reward!`,
+    `${request.childName} redeemed "${request.rewardTitle}" for ${request.pointCost} pts`,
+    `<p>🎁 <strong>${request.childName}</strong> redeemed <em>${request.rewardTitle}</em> for <strong>${request.pointCost} pts</strong>.</p>`,
+  ).catch(() => {});
+
+  // Redirect to the app with a success indicator
+  const appUrl = getBaseUrl();
+  return res.redirect(`${appUrl}/?reward_approval=approved&kid=${encodeURIComponent(request.childName)}&reward=${encodeURIComponent(request.rewardTitle)}`);
 });
 
 app.put('/api/redemption-requests/:id/approve', async (req, res) => {
@@ -991,7 +1074,8 @@ app.put('/api/redemption-requests/:id/approve', async (req, res) => {
     },
   });
 
-  await prisma.redemptionRequest.update({ where: { id }, data: { status: 'approved' } });
+  // Mark approved and consume the approval token so the deep link can't be reused
+  await prisma.redemptionRequest.update({ where: { id }, data: { status: 'approved', approvalToken: null } });
   res.json({ redemption });
 });
 

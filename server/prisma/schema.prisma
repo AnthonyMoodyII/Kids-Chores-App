@@ -119,6 +119,7 @@ model RedemptionRequest {
   pointCost        Int
   status           String   @default("pending")
   timestamp        DateTime @default(now())
+  approvalToken    String?  @unique // one-time token for deep-link approval
 }
 
 // ── Optional Chore Pool ───────────────────────────────────────────────────────
