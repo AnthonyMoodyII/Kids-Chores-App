@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { DailyChoreSelection, DayOfWeek } from '../types';
 import { API_URL } from '../lib/constants';
 
@@ -17,6 +17,7 @@ export interface UseDailySelectionsReturn {
   weekOf: string;
   refreshSelections: () => Promise<void>;
   pickChore: (childId: string, childName: string, templateId: string, day: DayOfWeek) => Promise<void>;
+  completeChore: (selectionId: string) => Promise<void>;
   uncompleteChore: (selectionId: string) => Promise<void>;
   unpickChore: (selectionId: string) => Promise<void>;
 }
@@ -25,8 +26,10 @@ export function useDailySelections(): UseDailySelectionsReturn {
   const [dailySelections, setDailySelections] = useState<DailyChoreSelection[]>([]);
   const weekOf = getWeekOf();
 
-  // Fetch ALL kids' selections for the current week in one request.
-  // This gives us the data needed for global-limit checks across kids.
+  // Keep a ref so pickChore can read current state without stale closure
+  const selectionsRef = useRef(dailySelections);
+  useEffect(() => { selectionsRef.current = dailySelections; }, [dailySelections]);
+
   const refreshSelections = useCallback(async () => {
     try {
       const res = await fetch(`${API_URL}/api/daily-selections?weekOf=${weekOf}`);
@@ -44,7 +47,7 @@ export function useDailySelections(): UseDailySelectionsReturn {
     templateId: string,
     day: DayOfWeek,
   ) => {
-    // Find-or-create the selection (server returns existing if already picked today)
+    // Find-or-create the selection
     const pickRes = await fetch(`${API_URL}/api/daily-selections`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -56,22 +59,46 @@ export function useDailySelections(): UseDailySelectionsReturn {
     }
     const selection: DailyChoreSelection = await pickRes.json();
 
-    // Complete once (each pick = one completion)
-    const completeRes = await fetch(`${API_URL}/api/daily-selections/${selection.id}/complete`, {
-      method: 'POST',
-    });
-    if (!completeRes.ok) {
-      const err = await completeRes.json();
-      throw new Error(err.error || 'Cannot complete chore — global limit may be reached');
+    // Check if the kid already had this selection with completions > 0 (i.e. this is
+    // a repeat pick on a chore they've already done today). In that case auto-complete
+    // so picking again = recording another completion. First picks stay at 0 so the
+    // kid manually marks done via the checkbox (just like mandatory chores).
+    const existing = selectionsRef.current.find(
+      s => s.childId === childId && s.templateId === templateId && s.day === day,
+    );
+    const isRepeatPick = existing && existing.completions > 0;
+
+    if (isRepeatPick) {
+      const completeRes = await fetch(`${API_URL}/api/daily-selections/${selection.id}/complete`, {
+        method: 'POST',
+      });
+      if (!completeRes.ok) {
+        const err = await completeRes.json();
+        throw new Error(err.error || 'Cannot add another completion — global limit may be reached');
+      }
+      const { selection: completed } = await completeRes.json();
+      setDailySelections(prev => prev.map(s => s.id === completed.id ? completed : s));
+    } else {
+      // First pick: add as pending (completions=0), kid will tap checkbox to mark done
+      setDailySelections(prev => {
+        const without = prev.filter(s => s.id !== selection.id);
+        return [...without, selection];
+      });
     }
-    const { selection: completed } = await completeRes.json();
-    setDailySelections(prev => {
-      const without = prev.filter(s => s.id !== completed.id);
-      return [...without, completed];
-    });
   }, [weekOf]);
 
-  // Undo one completion. If it was the last completion the selection is deleted.
+  const completeChore = useCallback(async (selectionId: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/api/daily-selections/${selectionId}/complete`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to mark complete');
+    }
+    const { selection } = await res.json();
+    setDailySelections(prev => prev.map(s => s.id === selectionId ? selection : s));
+  }, []);
+
   const uncompleteChore = useCallback(async (selectionId: string): Promise<void> => {
     const res = await fetch(`${API_URL}/api/daily-selections/${selectionId}/uncomplete`, {
       method: 'POST',
@@ -80,12 +107,8 @@ export function useDailySelections(): UseDailySelectionsReturn {
       const err = await res.json();
       throw new Error(err.error || 'Failed to undo completion');
     }
-    const data = await res.json();
-    if (data.deleted) {
-      setDailySelections(prev => prev.filter(s => s.id !== selectionId));
-    } else {
-      setDailySelections(prev => prev.map(s => s.id === selectionId ? data.selection : s));
-    }
+    const { selection } = await res.json();
+    setDailySelections(prev => prev.map(s => s.id === selectionId ? selection : s));
   }, []);
 
   const unpickChore = useCallback(async (selectionId: string) => {
@@ -105,6 +128,7 @@ export function useDailySelections(): UseDailySelectionsReturn {
     weekOf,
     refreshSelections,
     pickChore,
+    completeChore,
     uncompleteChore,
     unpickChore,
   };

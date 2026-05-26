@@ -25,6 +25,7 @@ interface ChildViewProps {
   poolTemplates: ChoreTemplate[];
   dailySelections: DailyChoreSelection[];     // ALL kids' selections (for global limit checks)
   onPickChore: (templateId: string) => Promise<void>;
+  onCompleteOptional: (selectionId: string) => Promise<void>;
   onUncompleteOptional: (selectionId: string) => Promise<void>;
   onUnpickChore: (selectionId: string) => Promise<void>;
   // Points & Rewards
@@ -80,6 +81,7 @@ export function ChildView({
   poolTemplates,
   dailySelections,
   onPickChore,
+  onCompleteOptional,
   onUncompleteOptional,
   onUnpickChore,
   kidBalance,
@@ -194,6 +196,7 @@ export function ChildView({
         dailySelections={dailySelections}
         onToggleMandatory={onToggleDay}
         onPickChore={onPickChore}
+        onCompleteOptional={onCompleteOptional}
         onUncompleteOptional={onUncompleteOptional}
         onUnpickChore={onUnpickChore}
       />

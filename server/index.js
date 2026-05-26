@@ -737,12 +737,6 @@ app.post('/api/daily-selections/:id/uncomplete', async (req, res) => {
     },
   });
 
-  if (newCount === 0) {
-    // Delete the selection entirely so the chore reappears in Available Missions
-    await prisma.dailyChoreSelection.delete({ where: { id } });
-    return res.json({ deleted: true, pointsReversed: ptsPerCompletion });
-  }
-
   const updated = await prisma.dailyChoreSelection.update({
     where: { id },
     data: { completions: newCount },

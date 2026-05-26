@@ -97,6 +97,7 @@ export default function ChoreApp() {
     dailySelections,
     refreshSelections,
     pickChore,
+    completeChore,
     uncompleteChore,
     unpickChore,
   } = useDailySelections();
@@ -320,6 +321,11 @@ export default function ChoreApp() {
     const activeKid = kids.find(k => k.id === activeKidId);
     if (!activeKid) return;
     await pickChore(activeKidId, activeKid.name, templateId, selectedDay);
+    await refreshBalances();
+  };
+
+  const handleCompleteOptional = async (selectionId: string): Promise<void> => {
+    await completeChore(selectionId);
     await refreshBalances();
   };
 
@@ -562,6 +568,7 @@ export default function ChoreApp() {
             poolTemplates={kidPoolTemplates}
             dailySelections={dailySelections.filter(s => s.weekOf === getWeekOf())}
             onPickChore={handlePickChore}
+            onCompleteOptional={handleCompleteOptional}
             onUncompleteOptional={handleUncompleteOptional}
             onUnpickChore={handleUnpickChore}
             kidBalance={pointBalances[activeKidId] ?? 0}
