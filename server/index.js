@@ -649,41 +649,46 @@ app.post('/api/daily-selections', async (req, res) => {
   if (!template.isInPool) return res.status(400).json({ error: 'Chore is not available in the pool' });
 
   // Prevent picking if kid already has this as a mandatory assigned chore
-  const existing = await prisma.chore.findFirst({
+  const mandatoryChore = await prisma.chore.findFirst({
     where: { templateId, assignedTo: childId, isArchived: false },
   });
-  if (existing) return res.status(400).json({ error: 'This chore is already assigned to you as a mandatory chore' });
+  if (mandatoryChore) return res.status(400).json({ error: 'This chore is already assigned to you as a mandatory chore' });
 
-  // Create selection (unique constraint handles duplicates)
-  try {
-    const selection = await prisma.dailyChoreSelection.create({
-      data: {
-        childId,
-        childName,
-        templateId,
-        title: template.title,
-        baseValue: template.baseValue,
-        maxPerDay: template.maxPerDay,
-        day,
-        weekOf,
-        completions: 0,
-      },
-    });
-    res.json(selection);
-  } catch (err) {
-    if (err.code === 'P2002') {
-      return res.status(409).json({ error: 'Already picked this chore today' });
-    }
-    throw err;
-  }
+  // Find-or-create: if the kid already picked this today, return the existing selection
+  const alreadyPicked = await prisma.dailyChoreSelection.findFirst({
+    where: { childId, templateId, day, weekOf },
+  });
+  if (alreadyPicked) return res.json(alreadyPicked);
+
+  const selection = await prisma.dailyChoreSelection.create({
+    data: {
+      childId,
+      childName,
+      templateId,
+      title: template.title,
+      baseValue: template.baseValue,
+      maxPerDay: template.maxPerDay,
+      day,
+      weekOf,
+      completions: 0,
+    },
+  });
+  res.json(selection);
 });
 
 app.post('/api/daily-selections/:id/complete', async (req, res) => {
   const { id } = req.params;
   const selection = await prisma.dailyChoreSelection.findUnique({ where: { id } });
   if (!selection) return res.status(404).json({ error: 'Selection not found' });
-  if (selection.completions >= selection.maxPerDay) {
-    return res.status(400).json({ error: `Already completed ${selection.maxPerDay}× today (max reached)` });
+
+  // Global limit: sum completions across ALL kids for this template today
+  const globalAgg = await prisma.dailyChoreSelection.aggregate({
+    _sum: { completions: true },
+    where: { templateId: selection.templateId, day: selection.day, weekOf: selection.weekOf },
+  });
+  const globalTotal = globalAgg._sum.completions || 0;
+  if (globalTotal >= selection.maxPerDay) {
+    return res.status(400).json({ error: `This chore has been completed ${selection.maxPerDay}× across all kids today (global max reached)` });
   }
 
   const updated = await prisma.dailyChoreSelection.update({
@@ -701,7 +706,6 @@ app.post('/api/daily-selections/:id/complete', async (req, res) => {
     },
   });
 
-  // Fire notification for optional chore completion
   notify(
     'choreComplete',
     `⭐ ${selection.childName} earned points!`,
@@ -710,6 +714,40 @@ app.post('/api/daily-selections/:id/complete', async (req, res) => {
   ).catch(() => {});
 
   res.json({ selection: updated, pointsAwarded: ptsPerCompletion });
+});
+
+// Undo one completion — decrements by 1, reverses points, deletes selection if completions → 0
+app.post('/api/daily-selections/:id/uncomplete', async (req, res) => {
+  const { id } = req.params;
+  const selection = await prisma.dailyChoreSelection.findUnique({ where: { id } });
+  if (!selection) return res.status(404).json({ error: 'Selection not found' });
+  if (selection.completions === 0) {
+    return res.status(400).json({ error: 'Nothing to undo — no completions recorded' });
+  }
+
+  const newCount = selection.completions - 1;
+
+  // Reverse the points for this completion
+  const ptsPerCompletion = chorePointsPerDay(selection.baseValue);
+  await prisma.pointLedger.create({
+    data: {
+      childId: selection.childId,
+      amount: -ptsPerCompletion,
+      reason: `Undo optional: ${selection.title} (${selection.day})`,
+    },
+  });
+
+  if (newCount === 0) {
+    // Delete the selection entirely so the chore reappears in Available Missions
+    await prisma.dailyChoreSelection.delete({ where: { id } });
+    return res.json({ deleted: true, pointsReversed: ptsPerCompletion });
+  }
+
+  const updated = await prisma.dailyChoreSelection.update({
+    where: { id },
+    data: { completions: newCount },
+  });
+  res.json({ selection: updated, pointsReversed: ptsPerCompletion });
 });
 
 // Return dollar summary for optional selections (current week, per kid)

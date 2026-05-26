@@ -97,7 +97,7 @@ export default function ChoreApp() {
     dailySelections,
     refreshSelections,
     pickChore,
-    completeChore,
+    uncompleteChore,
     unpickChore,
   } = useDailySelections();
 
@@ -155,10 +155,8 @@ export default function ChoreApp() {
           setKids(data);
           if (data.length > 0) {
             setActiveKidId(data[0].id);
-            // Fetch daily selections for all kids
-            for (const kid of data) {
-              refreshSelections(kid.id);
-            }
+            // Fetch all kids' daily selections in one request
+            refreshSelections();
           }
         }
         if (templatesRes.ok) setChoreTemplates(await templatesRes.json());
@@ -325,8 +323,8 @@ export default function ChoreApp() {
     await refreshBalances();
   };
 
-  const handleCompleteOptional = async (selectionId: string): Promise<void> => {
-    await completeChore(selectionId);
+  const handleUncompleteOptional = async (selectionId: string): Promise<void> => {
+    await uncompleteChore(selectionId);
     await refreshBalances();
   };
 
@@ -554,7 +552,7 @@ export default function ChoreApp() {
             activeKidId={activeKidId}
             setActiveKidId={id => {
               setActiveKidId(id);
-              refreshSelections(id);
+              refreshSelections();
             }}
             selectedDay={selectedDay}
             setSelectedDay={setSelectedDay}
@@ -562,11 +560,9 @@ export default function ChoreApp() {
             activeKidStats={activeKidStats}
             onToggleDay={handleToggle}
             poolTemplates={kidPoolTemplates}
-            dailySelections={dailySelections.filter(
-              s => s.childId === activeKidId && s.weekOf === getWeekOf(),
-            )}
+            dailySelections={dailySelections.filter(s => s.weekOf === getWeekOf())}
             onPickChore={handlePickChore}
-            onCompleteOptional={handleCompleteOptional}
+            onUncompleteOptional={handleUncompleteOptional}
             onUnpickChore={handleUnpickChore}
             kidBalance={pointBalances[activeKidId] ?? 0}
             ledger={ledger}
