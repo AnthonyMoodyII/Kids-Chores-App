@@ -105,6 +105,7 @@ export interface RewardRedemption {
   rewardTitle: string;
   pointCost: number;
   timestamp: string;
+  usedAt: string | null; // null = in inventory (approved but not yet enjoyed)
 }
 
 export interface RewardRequest {

@@ -72,6 +72,8 @@ export default function ChoreApp() {
     rejectRedemptionRequest,
     redeemReward,
     deleteRedemption,
+    markRedemptionUsed,
+    markRedemptionUnused,
   } = usePoints();
 
   const {
@@ -527,6 +529,8 @@ export default function ChoreApp() {
             onApproveRedemptionRequest={approveRedemptionRequest}
             onRejectRedemptionRequest={rejectRedemptionRequest}
             onDeleteRedemption={deleteRedemption}
+            onMarkRedemptionUsed={markRedemptionUsed}
+            onMarkRedemptionUnused={markRedemptionUnused}
             onRedeemReward={handleRedeemReward}
             onUpdateReward={handleUpdateReward}
             onAddReward={handleAddReward}
@@ -557,9 +561,11 @@ export default function ChoreApp() {
             kidBalance={pointBalances[activeKidId] ?? 0}
             ledger={ledger}
             rewards={rewards}
+            redemptions={redemptions}
             redemptionRequests={redemptionRequests}
             onRequestRedemption={handleRequestRedemption}
             onSubmitRewardIdea={handleSubmitRewardIdea}
+            onMarkRedemptionUsed={markRedemptionUsed}
             payouts={payouts}
             cashPayments={cashPayments}
             onCashToPoints={handleCashToPoints}

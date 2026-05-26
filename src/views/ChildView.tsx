@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Star, DollarSign, ArrowRightLeft } from 'lucide-react';
-import type { User, DayOfWeek, ChoreTemplate, DailyChoreSelection, RewardTemplate, PointLedgerEntry, RedemptionRequest, PayoutRecord, CashPayment } from '../types';
+import type { User, DayOfWeek, ChoreTemplate, DailyChoreSelection, RewardTemplate, RewardRedemption, PointLedgerEntry, RedemptionRequest, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
 import { btnBase, btnPress, cardSurface } from '../lib/constants';
 import { ChoreProgressRows } from '../components/ChoreProgressRows';
@@ -10,6 +10,7 @@ import { RewardsCatalog } from '../components/RewardsCatalog';
 import { SuggestRewardForm } from '../components/SuggestRewardForm';
 import { MissionBoard } from '../components/MissionBoard';
 import { WeeklyEarningsTracker } from '../components/WeeklyEarningsTracker';
+import { RewardInventory } from '../components/RewardInventory';
 
 interface ChildViewProps {
   kids: User[];
@@ -30,9 +31,11 @@ interface ChildViewProps {
   kidBalance: number;
   ledger: PointLedgerEntry[];
   rewards: RewardTemplate[];
+  redemptions: RewardRedemption[];
   redemptionRequests: RedemptionRequest[];
   onRequestRedemption: (childId: string, childName: string, rewardTemplateId: string) => Promise<void>;
   onSubmitRewardIdea: (childId: string, childName: string, title: string, description?: string) => Promise<void>;
+  onMarkRedemptionUsed: (id: string) => Promise<void>;
   // Cash → Points
   payouts: PayoutRecord[];
   cashPayments: CashPayment[];
@@ -82,9 +85,11 @@ export function ChildView({
   kidBalance,
   ledger,
   rewards,
+  redemptions,
   redemptionRequests,
   onRequestRedemption,
   onSubmitRewardIdea,
+  onMarkRedemptionUsed,
   payouts,
   cashPayments,
   onCashToPoints,
@@ -199,6 +204,15 @@ export function ChildView({
         poolTemplates={poolTemplates}
         dailySelections={dailySelections.filter(s => s.childId === activeKidId)}
       />
+
+      {/* Reward inventory — approved rewards not yet used */}
+      {activeKidId && (
+        <RewardInventory
+          childId={activeKidId}
+          redemptions={redemptions}
+          onMarkUsed={onMarkRedemptionUsed}
+        />
+      )}
 
       {/* Rewards catalog — right under chores so kids see what they're working toward */}
       {activeKidId && activeRewards.length > 0 && (

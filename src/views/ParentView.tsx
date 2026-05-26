@@ -72,6 +72,8 @@ interface ParentViewProps {
   onApproveRedemptionRequest: (id: string) => Promise<void>;
   onRejectRedemptionRequest: (id: string) => Promise<void>;
   onDeleteRedemption: (id: string) => Promise<void>;
+  onMarkRedemptionUsed: (id: string) => Promise<void>;
+  onMarkRedemptionUnused: (id: string) => Promise<void>;
   onRedeemReward: (childId: string, rewardTemplateId: string) => Promise<void>;
   onUpdateReward: (id: string, patch: Partial<RewardTemplate>) => Promise<void>;
   onAddReward: (title: string, pointCost: number, icon: string, description?: string) => Promise<void>;
@@ -124,6 +126,8 @@ export function ParentView({
   onApproveRedemptionRequest,
   onRejectRedemptionRequest,
   onDeleteRedemption,
+  onMarkRedemptionUsed,
+  onMarkRedemptionUnused,
   onRedeemReward,
   onUpdateReward,
   onAddReward,
@@ -422,11 +426,13 @@ export function ParentView({
                     )}
                   </div>
 
-                  {/* Redemption history */}
+                  {/* Redemption history / inventory */}
                   <RedemptionHistory
                     redemptions={redemptions}
                     kidId={kid.id}
                     onDelete={onDeleteRedemption}
+                    onMarkUsed={onMarkRedemptionUsed}
+                    onMarkUnused={onMarkRedemptionUnused}
                   />
 
                   {/* Cash ledger */}

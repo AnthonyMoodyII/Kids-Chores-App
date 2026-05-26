@@ -878,6 +878,30 @@ app.post('/api/points/redeem', async (req, res) => {
   res.json(redemption);
 });
 
+// Mark a redeemed reward as used (moves out of inventory)
+app.post('/api/points/redemptions/:id/use', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+  const updated = await prisma.rewardRedemption.update({
+    where: { id },
+    data: { usedAt: new Date() },
+  });
+  res.json(updated);
+});
+
+// Mark a redeemed reward as NOT yet used (move back to inventory)
+app.post('/api/points/redemptions/:id/unuse', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+  const updated = await prisma.rewardRedemption.update({
+    where: { id },
+    data: { usedAt: null },
+  });
+  res.json(updated);
+});
+
 // Delete a redemption and refund points
 app.delete('/api/points/redemptions/:id', async (req, res) => {
   const { id } = req.params;

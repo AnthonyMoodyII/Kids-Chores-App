@@ -89,13 +89,14 @@ model PointLedger {
 }
 
 model RewardRedemption {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   childId          String
   childName        String
   rewardTemplateId String
   rewardTitle      String
   pointCost        Int
-  timestamp        DateTime @default(now())
+  timestamp        DateTime  @default(now())
+  usedAt           DateTime? // null = in inventory (approved but not yet enjoyed)
 }
 
 model RewardRequest {

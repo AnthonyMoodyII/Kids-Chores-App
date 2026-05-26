@@ -88,6 +88,22 @@ export function usePoints() {
     [refreshBalances],
   );
 
+  // Mark a redeemed reward as used (moves it out of inventory)
+  const markRedemptionUsed = useCallback(async (id: string) => {
+    const res = await fetch(`${API_URL}/api/points/redemptions/${id}/use`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to mark as used');
+    const updated: RewardRedemption = await res.json();
+    setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
+  }, []);
+
+  // Move a redemption back to inventory (unmark used)
+  const markRedemptionUnused = useCallback(async (id: string) => {
+    const res = await fetch(`${API_URL}/api/points/redemptions/${id}/unuse`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to unmark');
+    const updated: RewardRedemption = await res.json();
+    setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
+  }, []);
+
   return {
     pointBalances,
     setPointBalances,
@@ -101,5 +117,7 @@ export function usePoints() {
     rejectRedemptionRequest,
     redeemReward,
     deleteRedemption,
+    markRedemptionUsed,
+    markRedemptionUnused,
   };
 }
