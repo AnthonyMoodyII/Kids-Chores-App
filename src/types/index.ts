@@ -21,6 +21,7 @@ export interface ChoreTemplate {
   isMandatory?: boolean;
   maxPerDay?: number;
   isInPool?: boolean;
+  icon?: string;
 }
 
 export interface DailyChoreSelection {
@@ -31,6 +32,7 @@ export interface DailyChoreSelection {
   title: string;
   baseValue: number;
   maxPerDay: number;
+  icon?: string;
   day: DayOfWeek;
   weekOf: string;
   completions: number;
@@ -46,6 +48,7 @@ export interface Chore {
   completedDays: DayOfWeek[];
   isApproved: boolean;
   isArchived: boolean;
+  icon?: string;
 }
 
 export interface PayoutRecord {
@@ -105,7 +108,8 @@ export interface RewardRedemption {
   rewardTitle: string;
   pointCost: number;
   timestamp: string;
-  usedAt: string | null; // null = in inventory (approved but not yet enjoyed)
+  usedAt: string | null;           // null = in inventory; set = used/redeemed
+  useApprovalToken?: string | null; // non-null = kid has requested parent approval to use
 }
 
 export interface RewardRequest {

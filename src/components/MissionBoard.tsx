@@ -1,12 +1,20 @@
-import { useState } from 'react';
-import { CheckCircle2, Circle, AlertCircle, Plus, X } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { CheckCircle2, Circle, Plus, X, Search } from 'lucide-react';
 import type { Chore, ChoreTemplate, DailyChoreSelection, DayOfWeek } from '../types';
-import { DAYS, btnBase, btnPress, cardSurface } from '../lib/constants';
+import { DAYS, btnBase, btnPress, cardSurface, fmtPts } from '../lib/constants';
 import { getChoreEarnedAmount } from '../lib/earnings';
 
 function chorePointsPerDay(baseValue: number) {
-  return 10 + Math.round(baseValue * 4);
+  return Math.max(10, 10 + Math.round(baseValue * 4));
 }
+
+const isIconUrl = (s: string) =>
+  s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/') || s.startsWith('data:');
+
+const renderIcon = (icon: string) =>
+  isIconUrl(icon)
+    ? <img src={icon} className="h-7 w-7 shrink-0 object-contain" alt="" />
+    : <span className="shrink-0 text-2xl leading-none">{icon}</span>;
 
 interface MissionBoardProps {
   activeKidId: string;
@@ -41,11 +49,22 @@ export function MissionBoard({
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [unpickingId, setUnpickingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [missionSearch, setMissionSearch] = useState('');
+  const [missionSort, setMissionSort] = useState<'pts' | 'az'>('pts');
 
   // This kid's picks on the selected day
   const todayPicks = dailySelections.filter(
     s => s.childId === activeKidId && s.day === selectedDay,
   );
+
+  // Points earned on the selected day (mandatory + optional)
+  const dayPoints =
+    mandatoryChores
+      .filter(c => c.completedDays.includes(selectedDay))
+      .reduce((sum, c) => sum + chorePointsPerDay(c.baseValue), 0) +
+    todayPicks
+      .filter(s => s.completions > 0)
+      .reduce((sum, s) => sum + chorePointsPerDay(s.baseValue) * s.completions, 0);
 
   // Mandatory template IDs (exclude from Available panel)
   const mandatoryTemplateIds = new Set(mandatoryChores.map(c => c.templateId).filter(Boolean));
@@ -65,10 +84,20 @@ export function MissionBoard({
     if (t.isInPool === false) return false;
     if (mandatoryTemplateIds.has(t.id)) return false;
     if (globalCompletionsToday(t.id) >= (t.maxPerDay ?? 1)) return false;
-    // Hide if kid already has a pending (not-yet-done) pick
     if (todayPicks.some(s => s.templateId === t.id && s.completions === 0)) return false;
     return true;
   });
+
+  // Filtered + sorted available missions
+  const filteredMissions = useMemo(() => {
+    const q = missionSearch.trim().toLowerCase();
+    const filtered = q ? available.filter(t => t.title.toLowerCase().includes(q)) : available;
+    return [...filtered].sort((a, b) =>
+      missionSort === 'pts'
+        ? chorePointsPerDay(b.baseValue) - chorePointsPerDay(a.baseValue)
+        : a.title.localeCompare(b.title),
+    );
+  }, [available, missionSearch, missionSort]);
 
   const handlePick = async (templateId: string) => {
     setPickingId(templateId);
@@ -119,10 +148,10 @@ export function MissionBoard({
             key={day}
             type="button"
             onClick={() => onSelectDay(day)}
-            className={`${btnBase} ${btnPress} shrink-0 flex-1 rounded-2xl border-2 px-3 py-2.5 text-xs font-black uppercase tracking-wide transition-colors ${
+            className={`${btnBase} ${btnPress} shrink-0 flex-1 rounded-xl border px-2 py-2 text-[11px] font-semibold tracking-tight transition-all ${
               selectedDay === day
-                ? 'border-violet-500 bg-violet-600 text-white shadow-md shadow-violet-500/30'
-                : 'border-slate-200 bg-white text-slate-500 hover:border-violet-300 hover:bg-violet-50'
+                ? 'border-violet-400/40 bg-violet-600 text-white shadow-sm shadow-violet-500/25'
+                : 'border-slate-200 bg-white text-slate-400 hover:border-violet-200 hover:text-slate-600'
             }`}
           >
             {day.slice(0, 3)}
@@ -141,9 +170,16 @@ export function MissionBoard({
       <div className="grid gap-4 lg:grid-cols-2">
         {/* ── Left: My Chores ── */}
         <div className={`${cardSurface} p-5`}>
-          <h3 className="mb-4 flex items-center gap-2 text-base font-black uppercase tracking-wider text-slate-700">
-            <span className="text-lg">📋</span> {activeKidName}&apos;s Chores
-          </h3>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-base font-bold text-slate-700">
+              <span className="text-lg">📋</span> {activeKidName}'s Chores
+            </h3>
+            {dayPoints > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">
+                ⭐ +{fmtPts(dayPoints)} pts {selectedDay.slice(0, 3)}
+              </span>
+            )}
+          </div>
 
           {/* Mandatory chores */}
           {mandatoryChores.length > 0 && (
@@ -168,27 +204,28 @@ export function MissionBoard({
                     <div className={isDone ? 'text-emerald-600' : 'text-slate-400'}>
                       {isDone ? <CheckCircle2 size={24} /> : <Circle size={24} />}
                     </div>
+                    {chore.icon && renderIcon(chore.icon)}
                     <div className="min-w-0 flex-1">
-                      <p className={`font-bold text-sm flex flex-wrap items-center gap-1.5 ${isDone ? 'text-emerald-800 line-through opacity-60' : 'text-slate-800'}`}>
+                      <p className={`break-words font-bold text-sm flex flex-wrap items-center gap-1.5 ${isDone ? 'text-emerald-800 line-through opacity-60' : 'text-slate-800'}`}>
                         {chore.title}
                         {chore.isMandatory && (
-                          <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-600 no-underline opacity-100">
-                            <AlertCircle size={10} /> Mandatory
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-500">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-rose-400" /> Required
                           </span>
                         )}
                       </p>
                       <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-                        <span>⭐ +{ptsPerDay} pts/day</span>
+                        <span>⭐ +{fmtPts(ptsPerDay)} pts/day</span>
                         <span>💵 ${earned.toFixed(2)} earned</span>
                       </p>
                       <div className="mt-1.5 flex gap-0.5">
                         {[...Array(7)].map((_, i) => (
                           <div
                             key={i}
-                            className={`h-1 flex-1 rounded-full ${
+                            className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${
                               i < chore.completedDays.length
                                 ? chore.isApproved ? 'bg-emerald-500' : 'bg-violet-400'
-                                : 'bg-slate-200'
+                                : 'bg-slate-100'
                             }`}
                           />
                         ))}
@@ -203,8 +240,8 @@ export function MissionBoard({
           {/* Optional picks for today — same checkbox style as mandatory */}
           {todayPicks.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-black uppercase tracking-wider text-slate-400">
-                📌 My Picks Today
+              <p className="text-xs font-semibold text-slate-400">
+                📌 My picks today
               </p>
               {todayPicks.map(s => {
                 const isDone = s.completions > 0;
@@ -238,15 +275,16 @@ export function MissionBoard({
                     </button>
 
                     {/* Info */}
+                    {s.icon && renderIcon(s.icon)}
                     <div className="min-w-0 flex-1">
-                      <p className={`font-bold text-sm ${isDone ? 'text-amber-800' : 'text-slate-800'}`}>
+                      <p className={`break-words font-bold text-sm ${isDone ? 'text-amber-800' : 'text-slate-800'}`}>
                         {s.title}
                         {s.completions > 1 && (
                           <span className="ml-1.5 font-black text-amber-600">×{s.completions}</span>
                         )}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        ⭐ +{ptsPerDay} pts · 💵 ${(s.baseValue / 5).toFixed(2)}/completion
+                        ⭐ +{fmtPts(ptsPerDay)} pts · 💵 ${(s.baseValue / 5).toFixed(2)}/completion
                         {globalMax > 1 && (
                           <span className="ml-1 font-bold text-violet-500">
                             · {globalDone}/{globalMax} done today
@@ -282,12 +320,16 @@ export function MissionBoard({
 
         {/* ── Right: Available Missions ── */}
         <div className={`${cardSurface} p-5`}>
-          <h3 className="mb-1 flex items-center gap-2 text-base font-black uppercase tracking-wider text-slate-700">
-            <span className="text-lg">🎯</span> Available Missions
-          </h3>
-          <p className="mb-4 text-xs text-slate-400">
-            Pick extra chores to earn more points and money today
-          </p>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-base font-bold text-slate-700">
+              <span className="text-lg">🎯</span> Available Missions
+            </h3>
+            {available.length > 0 && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-500">
+                {available.length}
+              </span>
+            )}
+          </div>
 
           {available.length === 0 ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-6 text-center">
@@ -297,44 +339,81 @@ export function MissionBoard({
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {available.map(t => {
-                const pts = chorePointsPerDay(t.baseValue);
-                const dollarPer = (t.baseValue / 5).toFixed(2);
-                const isPicking = pickingId === t.id;
-                const globalDone = globalCompletionsToday(t.id);
-                const globalMax = t.maxPerDay ?? 1;
-                const remaining = globalMax - globalDone;
-                return (
-                  <div
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-sm"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-slate-800">{t.title}</p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                        <span>⭐ +{pts} pts</span>
-                        <span>💵 ${dollarPer}/completion</span>
-                        {globalMax > 1 && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-600">
-                            🔁 {remaining} of {globalMax} left today
-                          </span>
-                        )}
+            <>
+              {/* Search + sort bar */}
+              <div className="mb-3 flex items-center gap-2 rounded-2xl border-2 border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-violet-400 transition-colors">
+                <Search size={13} className="shrink-0 text-slate-400" />
+                <input
+                  type="text"
+                  value={missionSearch}
+                  onChange={e => setMissionSearch(e.target.value)}
+                  placeholder="Search missions…"
+                  className="flex-1 bg-transparent text-xs font-bold text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400"
+                />
+                {missionSearch && (
+                  <button type="button" onClick={() => setMissionSearch('')} className="shrink-0 text-slate-300 hover:text-slate-500">
+                    <X size={12} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMissionSort(s => s === 'pts' ? 'az' : 'pts')}
+                  className={`${btnBase} shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-1 text-[10px] font-black transition-colors hover:border-violet-300 hover:text-violet-600 ${
+                    missionSort === 'pts' ? 'text-amber-600' : 'text-slate-500'
+                  }`}
+                >
+                  {missionSort === 'pts' ? '⭐ Pts' : 'A–Z'}
+                </button>
+              </div>
+
+              {/* Compact 2-column grid */}
+              {filteredMissions.length === 0 ? (
+                <p className="py-4 text-center text-xs text-slate-400">No missions match &ldquo;{missionSearch}&rdquo;</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {filteredMissions.map(t => {
+                    const pts = chorePointsPerDay(t.baseValue);
+                    const isPicking = pickingId === t.id;
+                    const globalDone = globalCompletionsToday(t.id);
+                    const globalMax = t.maxPerDay ?? 1;
+                    const remaining = globalMax - globalDone;
+                    return (
+                      <div
+                        key={t.id}
+                        className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        {/* Icon + name */}
+                        <div className="flex items-start gap-2">
+                          {t.icon
+                            ? renderIcon(t.icon)
+                            : <span className="shrink-0 text-xl leading-none">📋</span>
+                          }
+                          <p className="flex-1 break-words text-xs font-bold leading-tight text-slate-800">{t.title}</p>
+                        </div>
+                        {/* Pts + repeat badge + Pick button */}
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[10px] font-black text-amber-600">⭐ +{fmtPts(pts)} pts</span>
+                            {globalMax > 1 && (
+                              <span className="text-[9px] font-bold text-violet-500">🔁 {remaining}/{globalMax} left</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isPicking}
+                            onClick={() => handlePick(t.id)}
+                            className={`${btnBase} ${btnPress} flex shrink-0 items-center gap-1 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-2.5 py-1.5 text-[10px] font-black text-white shadow disabled:pointer-events-none disabled:opacity-50`}
+                          >
+                            <Plus size={11} />
+                            {isPicking ? '…' : 'Pick'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isPicking}
-                      onClick={() => handlePick(t.id)}
-                      className={`${btnBase} ${btnPress} flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-3 py-2 text-xs font-black text-white shadow-md shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-50`}
-                    >
-                      <Plus size={13} />
-                      {isPicking ? '…' : 'Pick'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -1,7 +1,15 @@
 import { useState } from 'react';
 import { Gift, X } from 'lucide-react';
 import type { RewardTemplate } from '../types';
-import { btnBase, btnPress } from '../lib/constants';
+import { btnBase, btnPress, fmtPts } from '../lib/constants';
+
+const isIconUrl = (s: string) =>
+  s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/') || s.startsWith('data:');
+
+const renderRewardIcon = (icon?: string | null) =>
+  icon && isIconUrl(icon)
+    ? <img src={icon} className="h-8 w-8 shrink-0 object-contain" alt="" />
+    : <span className="text-2xl">{icon || '🎁'}</span>;
 
 interface RedeemRewardPanelProps {
   kidId: string;
@@ -51,7 +59,7 @@ export function RedeemRewardPanel({
           <Gift size={20} className="text-amber-600" />
           <p className="font-black text-amber-900">Redeem for {kidName}</p>
           <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-black text-amber-800">
-            ⭐ {balance} pts
+            ⭐ {fmtPts(balance)} pts
           </span>
         </div>
         <button
@@ -83,11 +91,11 @@ export function RedeemRewardPanel({
                       : 'border-slate-200 bg-white hover:border-amber-200'
                   }`}
                 >
-                  <span className="text-2xl">{r.icon || '🎁'}</span>
+                  {renderRewardIcon(r.icon)}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-slate-800">{r.title}</p>
                     <p className={`text-xs font-black ${canAfford ? 'text-amber-600' : 'text-slate-400'}`}>
-                      {r.pointCost} pts
+                      {fmtPts(r.pointCost)} pts
                     </p>
                   </div>
                 </button>
@@ -106,7 +114,7 @@ export function RedeemRewardPanel({
             {loading
               ? 'Redeeming…'
               : selected
-              ? `Redeem "${selectedReward?.title}" (${selectedReward?.pointCost} pts)`
+              ? `Redeem "${selectedReward?.title}" (${fmtPts(selectedReward?.pointCost ?? 0)} pts)`
               : 'Select a reward above'}
           </button>
         </>

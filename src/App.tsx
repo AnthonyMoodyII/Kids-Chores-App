@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Home, LogIn } from 'lucide-react';
 import type { User, DayOfWeek } from './types';
-import { API_URL, IMG_HOME, IMG_KIDS, btnBase, btnPress } from './lib/constants';
+import { API_URL, IMG_HOME, btnBase, btnPress } from './lib/constants';
 import { readParentSession, writeParentSession } from './lib/session';
 import { useChores } from './hooks/useChores';
 import { usePayouts } from './hooks/usePayouts';
@@ -26,7 +26,6 @@ export default function ChoreApp() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showOAuthSettings, setShowOAuthSettings] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
-  const [kidsImageBroken, setKidsImageBroken] = useState(false);
   const [milestone, setMilestone] = useState<{
     show: boolean;
     title: string;
@@ -67,13 +66,15 @@ export default function ChoreApp() {
     redemptionRequests,
     setRedemptionRequests,
     refreshBalances,
-    requestRedemption,
     approveRedemptionRequest,
     rejectRedemptionRequest,
     redeemReward,
     deleteRedemption,
     markRedemptionUsed,
     markRedemptionUnused,
+    requestRedemptionUse,
+    approveRedemptionUse,
+    denyRedemptionUse,
   } = usePoints();
 
   const {
@@ -125,8 +126,31 @@ export default function ChoreApp() {
       const reward = params.get('reward') || 'reward';
       showToast(`✅ Approved! ${kid}'s "${reward}" is now in their stash.`);
       window.history.replaceState({}, '', '/');
+    } else if (approval === 'denied') {
+      const kid = params.get('kid') || 'Kid';
+      const reward = params.get('reward') || 'reward';
+      showToast(`❌ Denied. ${kid}'s request for "${reward}" was declined.`);
+      window.history.replaceState({}, '', '/');
     } else if (approval === 'already_approved') {
       showToast('This reward was already approved.');
+      window.history.replaceState({}, '', '/');
+    } else if (approval === 'already_handled') {
+      showToast('This reward request was already handled.');
+      window.history.replaceState({}, '', '/');
+    }
+    const rewardUse = params.get('reward_use');
+    if (rewardUse === 'approved') {
+      const kid = params.get('kid') || 'Kid';
+      const reward = params.get('reward') || 'reward';
+      showToast(`✅ Approved! ${kid} can now use "${reward}"!`);
+      window.history.replaceState({}, '', '/');
+    } else if (rewardUse === 'denied') {
+      const kid = params.get('kid') || 'Kid';
+      const reward = params.get('reward') || 'reward';
+      showToast(`❌ Denied. ${kid}'s request to use "${reward}" was declined.`);
+      window.history.replaceState({}, '', '/');
+    } else if (rewardUse === 'already_handled') {
+      showToast('This reward use request was already handled.');
       window.history.replaceState({}, '', '/');
     }
   }, []);
@@ -249,10 +273,10 @@ export default function ChoreApp() {
   };
 
   const navBtn = (active: boolean) =>
-    `${btnBase} ${btnPress} px-8 py-3 rounded-[1.75rem] font-black uppercase text-[11px] tracking-wider ${
+    `${btnBase} ${btnPress} px-7 py-2.5 rounded-[1.5rem] font-semibold text-sm tracking-tight ${
       active
-        ? 'bg-white text-violet-600 shadow-lg shadow-slate-900/10'
-        : 'text-slate-500 hover:text-slate-800'
+        ? 'bg-white text-violet-600 shadow-md shadow-slate-900/10'
+        : 'text-slate-500 hover:text-slate-700'
     }`;
 
   // ── Milestone helper ──────────────────────────────────────────────────────
@@ -270,9 +294,6 @@ export default function ChoreApp() {
   };
   const handleAddReward = async (title: string, pointCost: number, icon: string, description?: string): Promise<void> => {
     await addReward(title, pointCost, icon, description);
-  };
-  const handleRequestRedemption = async (childId: string, childName: string, rewardTemplateId: string): Promise<void> => {
-    await requestRedemption(childId, childName, rewardTemplateId);
   };
   const handleSubmitRewardIdea = async (childId: string, childName: string, title: string, description?: string): Promise<void> => {
     await submitRewardIdea(childId, childName, title, description);
@@ -327,11 +348,21 @@ export default function ChoreApp() {
   const handleCompleteOptional = async (selectionId: string): Promise<void> => {
     await completeChore(selectionId);
     await refreshBalances();
+    // Refresh ledger so "+today" counter updates immediately
+    if (activeKidId) {
+      const data = await fetch(`${API_URL}/api/points/ledger/${activeKidId}`).then(r => r.ok ? r.json() : null);
+      if (data) setLedger(prev => [...prev.filter(e => e.childId !== activeKidId), ...data]);
+    }
   };
 
   const handleUncompleteOptional = async (selectionId: string): Promise<void> => {
     await uncompleteChore(selectionId);
     await refreshBalances();
+    // Refresh ledger so "+today" counter updates immediately
+    if (activeKidId) {
+      const data = await fetch(`${API_URL}/api/points/ledger/${activeKidId}`).then(r => r.ok ? r.json() : null);
+      if (data) setLedger(prev => [...prev.filter(e => e.childId !== activeKidId), ...data]);
+    }
   };
 
   const handleUnpickChore = async (selectionId: string): Promise<void> => {
@@ -343,7 +374,7 @@ export default function ChoreApp() {
     // ── Optimistic points update (immediate, before server round-trip) ──
     const chore = chores.find(c => c.id === choreId);
     if (chore) {
-      const ptsPerDay = 10 + Math.round(chore.baseValue * 4);
+      const ptsPerDay = Math.max(10, 10 + Math.round(chore.baseValue * 4));
       const isCurrentlyDone = chore.completedDays.includes(day);
       const delta = isCurrentlyDone ? -ptsPerDay : ptsPerDay;
 
@@ -390,11 +421,11 @@ export default function ChoreApp() {
     }
   };
 
-  const handleProcessPayout = (kidId: string) => processPayout(kidId, showToast);
+  const handleProcessPayout = (kidId: string, customAmount?: number) => processPayout(kidId, showToast, customAmount);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-violet-50/30 to-slate-100 p-4 pb-16 font-sans text-slate-900 md:p-10">
+    <div className="min-h-screen bg-[#f7f6f3] p-4 pb-16 font-sans text-slate-900 md:p-10">
       {/* Milestone popup */}
       {milestone.show && (
         <MilestoneModal title={milestone.title} isMilestone={milestone.isMilestone} />
@@ -409,7 +440,10 @@ export default function ChoreApp() {
 
       <div className="mx-auto max-w-6xl">
         {/* ── Header ── */}
-        <header className="mb-10 grid gap-8 rounded-[2rem] bg-gradient-to-br from-slate-900 to-slate-800 p-8 shadow-2xl lg:grid-cols-[1fr_auto] lg:items-center">
+        <header className="relative mb-10 grid gap-8 overflow-hidden rounded-[2rem] bg-[#0d0b1a] p-8 shadow-2xl shadow-slate-900/40 lg:grid-cols-[1fr_auto] lg:items-center">
+          {/* ambient glows */}
+          <div className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-violet-600/20 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 right-8 h-48 w-64 rounded-full bg-indigo-700/15 blur-2xl" />
           <div className="text-left">
             <a
               href="/"
@@ -425,7 +459,7 @@ export default function ChoreApp() {
             <h1 className="text-4xl font-black tracking-tight text-white md:text-5xl">
               Moody Family Chore App
             </h1>
-            <p className="mt-2 text-sm font-medium tracking-wide text-violet-200/70 uppercase">
+            <p className="mt-2 text-sm font-medium text-violet-200/60">
               Chores and Rewards
             </p>
           </div>
@@ -456,26 +490,16 @@ export default function ChoreApp() {
                 setView('parent');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              className={`${btnBase} ${btnPress} group relative block h-28 w-40 overflow-hidden rounded-3xl shadow-lg shadow-slate-900/15 ring-1 ring-white/50 md:h-32 md:w-44`}
+              className={`${btnBase} ${btnPress} group relative flex h-28 w-40 flex-col items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-br from-violet-800 to-indigo-900 shadow-lg shadow-slate-900/40 ring-1 ring-violet-500/40 md:h-32 md:w-44`}
               aria-label="Open parent portal"
             >
-              {!kidsImageBroken ? (
-                <img
-                  src={IMG_KIDS}
-                  alt=""
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                  onError={() => setKidsImageBroken(true)}
-                />
-              ) : (
-                <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-violet-100 to-indigo-100 transition-transform duration-300 group-hover:scale-105">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/90 text-violet-600 shadow-inner">
-                    <LogIn size={28} strokeWidth={2} />
-                  </div>
-                </div>
-              )}
-              <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700 shadow-sm">
-                <LogIn size={12} /> Parent
+              {/* Generic parent "P" logo */}
+              <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-violet-400/40 bg-white/10 backdrop-blur-sm transition-transform duration-300 group-hover:scale-110">
+                <span className="text-3xl font-black text-white" style={{ fontFamily: 'serif' }}>P</span>
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-violet-200">Parent</span>
+              <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-bold text-violet-200">
+                <LogIn size={10} /> Login
               </span>
             </a>
           </div>
@@ -483,9 +507,9 @@ export default function ChoreApp() {
 
         {/* ── Nav ── */}
         <nav className="mb-10 flex justify-center">
-          <div className="flex gap-2 rounded-[2rem] border border-white/60 bg-slate-200/40 p-1.5 shadow-inner backdrop-blur-sm">
+          <div className="flex gap-1.5 rounded-[2rem] border border-slate-200/60 bg-white/70 p-1.5 shadow-sm backdrop-blur-sm">
             <button type="button" onClick={() => setView('child')} className={navBtn(view === 'child')}>
-              KIDS
+              Kids
             </button>
             <button type="button" onClick={() => setView('parent')} className={navBtn(view === 'parent')}>
               Parent
@@ -545,6 +569,8 @@ export default function ChoreApp() {
             onDeleteRedemption={deleteRedemption}
             onMarkRedemptionUsed={markRedemptionUsed}
             onMarkRedemptionUnused={markRedemptionUnused}
+            onApproveRedemptionUse={approveRedemptionUse}
+            onDenyRedemptionUse={denyRedemptionUse}
             onRedeemReward={handleRedeemReward}
             onUpdateReward={handleUpdateReward}
             onAddReward={handleAddReward}
@@ -575,10 +601,9 @@ export default function ChoreApp() {
             ledger={ledger}
             rewards={rewards}
             redemptions={redemptions}
-            redemptionRequests={redemptionRequests}
-            onRequestRedemption={handleRequestRedemption}
+            onBuyReward={handleRedeemReward}
+            onRequestRedemptionUse={requestRedemptionUse}
             onSubmitRewardIdea={handleSubmitRewardIdea}
-            onMarkRedemptionUsed={markRedemptionUsed}
             payouts={payouts}
             cashPayments={cashPayments}
             onCashToPoints={handleCashToPoints}

@@ -8,7 +8,7 @@ export interface UsePayoutsReturn {
   setPayouts: React.Dispatch<React.SetStateAction<PayoutRecord[]>>;
   cashPayments: CashPayment[];
   setCashPayments: React.Dispatch<React.SetStateAction<CashPayment[]>>;
-  processPayout: (kidId: string, onError: (msg: string) => void) => Promise<void>;
+  processPayout: (kidId: string, onError: (msg: string) => void, customAmount?: number) => Promise<void>;
   processPayoutAll: (
     kids: User[],
     getKidStats: (id: string) => KidStats,
@@ -31,9 +31,13 @@ export function usePayouts(): UsePayoutsReturn {
   const [cashPayments, setCashPayments] = useState<CashPayment[]>([]);
 
   const processPayout = useCallback(
-    async (kidId: string, onError: (msg: string) => void) => {
+    async (kidId: string, onError: (msg: string) => void, customAmount?: number) => {
       try {
-        const response = await fetch(`${API_URL}/api/payouts/${kidId}`, { method: 'POST' });
+        const response = await fetch(`${API_URL}/api/payouts/${kidId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(customAmount != null ? { customAmount } : {}),
+        });
         if (!response.ok) throw new Error('Failed to process payout');
         const { payout } = await response.json();
         setPayouts(prev => [payout, ...prev]);

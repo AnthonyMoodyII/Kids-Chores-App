@@ -51,7 +51,7 @@ interface ParentViewProps {
   // handlers
   onApproveChore: (choreId: string) => void;
   onApproveAll: () => void;
-  onProcessPayout: (kidId: string) => void;
+  onProcessPayout: (kidId: string, customAmount?: number) => void;
   onDeletePayout: (id: string) => void;
   onClearPayoutHistory: (kidId: string) => void;
   onClearAllPayouts: () => void;
@@ -74,6 +74,8 @@ interface ParentViewProps {
   onDeleteRedemption: (id: string) => Promise<void>;
   onMarkRedemptionUsed: (id: string) => Promise<void>;
   onMarkRedemptionUnused: (id: string) => Promise<void>;
+  onApproveRedemptionUse: (id: string) => Promise<void>;
+  onDenyRedemptionUse: (id: string) => Promise<void>;
   onRedeemReward: (childId: string, rewardTemplateId: string) => Promise<void>;
   onUpdateReward: (id: string, patch: Partial<RewardTemplate>) => Promise<void>;
   onAddReward: (title: string, pointCost: number, icon: string, description?: string) => Promise<void>;
@@ -113,7 +115,7 @@ export function ParentView({
   onClearAllPayouts,
   onAddCashPayment,
   onDeleteCashPayment,
-  onWeeklyReset,
+  onWeeklyReset: _onWeeklyReset,
   onGoToKids,
   parentTab,
   setParentTab,
@@ -128,6 +130,8 @@ export function ParentView({
   onDeleteRedemption,
   onMarkRedemptionUsed,
   onMarkRedemptionUnused,
+  onApproveRedemptionUse,
+  onDenyRedemptionUse,
   onRedeemReward,
   onUpdateReward,
   onAddReward,
@@ -136,6 +140,9 @@ export function ParentView({
   onRejectRewardRequest,
 }: ParentViewProps) {
   const [redeemKidId, setRedeemKidId] = useState<string | null>(null);
+  // Payout amount per kid: null = not open, string = amount input open
+  const [payoutInputKidId, setPayoutInputKidId] = useState<string | null>(null);
+  const [payoutInputAmount, setPayoutInputAmount] = useState('');
 
   const tabBtn = (active: boolean) =>
     `${btnBase} ${btnPress} px-4 py-2 rounded-xl text-xs font-black ${
@@ -144,7 +151,8 @@ export function ParentView({
 
   const pendingRedemptionCount = redemptionRequests.filter(r => r.status === 'pending').length;
   const pendingRewardIdeaCount = rewardRequests.filter(r => r.status === 'pending').length;
-  const pendingBadge = pendingRedemptionCount + pendingRewardIdeaCount;
+  const pendingUseCount = redemptions.filter(r => r.useApprovalToken && !r.usedAt).length;
+  const pendingBadge = pendingRedemptionCount + pendingRewardIdeaCount + pendingUseCount;
 
   /* ── Not authed ── */
   if (!parentAuthed) {
@@ -235,7 +243,7 @@ export function ParentView({
       </div>
 
       {parentTab === 'settings' ? (
-        <SettingsTab onPasswordChanged={onPasswordChanged} />
+        <SettingsTab onPasswordChanged={onPasswordChanged} onClearAllPayouts={onClearAllPayouts} />
       ) : parentTab === 'manage' ? (
         <ManageTab
           kids={kids}
@@ -274,13 +282,55 @@ export function ParentView({
             />
           </div>
 
-          {/* Pending reward requests */}
+          {/* Pending reward requests (old buy-approval flow — kept for backward compat) */}
           {redemptionRequests.some(r => r.status === 'pending') && (
             <PendingRewardRequests
               requests={redemptionRequests}
               onApprove={onApproveRedemptionRequest}
               onReject={onRejectRedemptionRequest}
             />
+          )}
+
+          {/* Pending use requests — kids asking to redeem a reward they already own */}
+          {pendingUseCount > 0 && (
+            <div className="rounded-3xl border-2 border-violet-300 bg-violet-50 p-5">
+              <p className="mb-3 text-xs font-black uppercase tracking-widest text-violet-700">
+                🎁 Reward Use Requests ({pendingUseCount})
+              </p>
+              <div className="space-y-2">
+                {redemptions
+                  .filter(r => r.useApprovalToken && !r.usedAt)
+                  .map(r => (
+                    <div
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-white px-4 py-3"
+                    >
+                      <div>
+                        <p className="font-bold text-slate-800">
+                          {r.childName} wants to use: <span className="text-violet-700">{r.rewardTitle}</span>
+                        </p>
+                        <p className="text-xs text-slate-400">Purchased for {r.pointCost} pts</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onApproveRedemptionUse(r.id)}
+                          className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black uppercase tracking-wide text-white`}
+                        >
+                          ✅ Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDenyRedemptionUse(r.id)}
+                          className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase tracking-wide text-slate-500 hover:border-red-200 hover:text-red-600`}
+                        >
+                          ❌ Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
           )}
 
           {/* Pending reward ideas */}
@@ -326,7 +376,7 @@ export function ParentView({
                       <h3 className="text-xl font-black text-slate-900">{kid.name}&apos;s progress</h3>
                       <PointsBadge points={balance} size="sm" />
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setRedeemKidId(isRedeemOpen ? null : kid.id)}
@@ -334,14 +384,57 @@ export function ParentView({
                       >
                         <Gift size={15} /> Redeem Reward
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onProcessPayout(kid.id)}
-                        disabled={!stats.canPayout}
-                        className={`${btnBase} ${btnPress} rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-25`}
-                      >
-                        Payout
-                      </button>
+
+                      {/* Payout — click opens amount input, confirm sends */}
+                      {payoutInputKidId === kid.id ? (
+                        <div className="flex items-center gap-1.5 rounded-xl border-2 border-violet-400 bg-violet-50 px-3 py-1.5">
+                          <span className="text-xs font-black text-violet-700">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={payoutInputAmount}
+                            onChange={e => setPayoutInputAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-20 bg-transparent text-sm font-black text-violet-900 outline-none placeholder:font-normal placeholder:text-violet-300"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            disabled={!payoutInputAmount || parseFloat(payoutInputAmount) <= 0}
+                            onClick={() => {
+                              const amt = parseFloat(payoutInputAmount);
+                              if (amt > 0) {
+                                onProcessPayout(kid.id, amt);
+                                setPayoutInputKidId(null);
+                                setPayoutInputAmount('');
+                              }
+                            }}
+                            className={`${btnBase} ${btnPress} rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-black text-white disabled:opacity-40`}
+                          >
+                            ✓ Pay
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setPayoutInputKidId(null); setPayoutInputAmount(''); }}
+                            className={`${btnBase} rounded-lg px-2 py-1 text-[10px] font-bold text-violet-400 hover:text-violet-700`}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPayoutInputKidId(kid.id);
+                            setPayoutInputAmount('');
+                          }}
+                          disabled={!stats.canPayout}
+                          className={`${btnBase} ${btnPress} rounded-xl bg-violet-600 bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-violet-500/25 disabled:pointer-events-none disabled:opacity-25`}
+                        >
+                          Payout
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -449,48 +542,19 @@ export function ParentView({
             })}
           </div>
 
-          {/* Weekly reset */}
-          <section
-            className={`${cardSurface} flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between md:p-8`}
-          >
-            <div className="space-y-1">
-              <h3 className="flex items-center gap-2 text-lg font-black text-slate-900">
-                <RotateCcw className="text-violet-600" size={22} /> End of week reset
-              </h3>
-              <p className="max-w-xl text-sm text-slate-500">
-                Start a fresh week for everyone. Clears progress on active chores (not archived).
-                Typical use: Sunday evening.
+          {/* Auto-reset info (replaces manual button) */}
+          <section className={`${cardSurface} flex items-center gap-4 p-6 md:p-8`}>
+            <RotateCcw className="shrink-0 text-violet-400" size={22} />
+            <div>
+              <h3 className="text-base font-black text-slate-700">Weekly reset runs automatically</h3>
+              <p className="text-sm text-slate-500">
+                Every Sunday at midnight (Chicago time) the app approves chores, banks the week&apos;s
+                earnings into each kid&apos;s payout balance, clears points, and starts a fresh week.
+                No manual action needed.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onWeeklyReset}
-              className={`${btnBase} ${btnPress} shrink-0 rounded-2xl border border-slate-200 bg-slate-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-slate-900/25`}
-            >
-              Reset week
-            </button>
           </section>
 
-          {/* Clear all payouts */}
-          <section className={`${cardSurface} p-6 md:p-8`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-xl font-black text-slate-900">Clear all payout history</h3>
-                <p className="text-sm text-slate-500">
-                  Remove every payout record from the system. Use this when you want to reset
-                  payout history completely.
-                </p>
-                <p className="text-sm font-bold text-rose-600">This action is irreversible.</p>
-              </div>
-              <button
-                type="button"
-                onClick={onClearAllPayouts}
-                className={`${btnBase} ${btnPress} rounded-2xl bg-rose-600 px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-xl shadow-rose-500/20`}
-              >
-                Clear all payouts
-              </button>
-            </div>
-          </section>
         </div>
       )}
     </div>

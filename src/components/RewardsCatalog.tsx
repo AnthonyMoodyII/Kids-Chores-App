@@ -1,76 +1,80 @@
 import { useState } from 'react';
-import { Lock, Sparkles, Clock } from 'lucide-react';
-import type { RewardTemplate, RedemptionRequest } from '../types';
-import { btnBase, btnPress } from '../lib/constants';
+import { Lock, Sparkles, ShoppingCart, CheckCircle2 } from 'lucide-react';
+import type { RewardTemplate } from '../types';
+import { btnBase, btnPress, fmtPts } from '../lib/constants';
+
+const isIconUrl = (s: string) =>
+  s.startsWith('http://') || s.startsWith('https://') || s.startsWith('/') || s.startsWith('data:');
+
+const renderRewardIcon = (icon: string | undefined) =>
+  icon && isIconUrl(icon)
+    ? <img src={icon} className="mb-3 h-10 w-10 object-contain" alt="" />
+    : <div className="mb-3 text-3xl">{icon || '🎁'}</div>;
 
 interface RewardsCatalogProps {
   rewards: RewardTemplate[];
   balance: number;
   kidId: string;
   kidName?: string;
-  redemptionRequests: RedemptionRequest[];
   goalRewardIds: string[];
   onToggleGoal: (id: string) => void;
-  onRequestRedemption: (rewardTemplateId: string) => Promise<void>;
+  onBuyReward: (rewardTemplateId: string) => Promise<void>;
 }
 
 export function RewardsCatalog({
   rewards,
   balance,
-  kidId,
+  kidId: _kidId,
   kidName: _kidName,
-  redemptionRequests,
   goalRewardIds,
   onToggleGoal,
-  onRequestRedemption,
+  onBuyReward,
 }: RewardsCatalogProps) {
-  const [requesting, setRequesting] = useState<string | null>(null);
-  const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+  const [buying, setBuying] = useState<string | null>(null);
+  const [boughtIds, setBoughtIds] = useState<Set<string>>(new Set());
 
   const active = rewards.filter(r => r.isActive);
 
-  const pendingRequestIds = new Set(
-    redemptionRequests
-      .filter(r => r.childId === kidId && r.status === 'pending')
-      .map(r => r.rewardTemplateId),
-  );
-
-  const handleRequest = async (rewardId: string) => {
-    setRequesting(rewardId);
+  const handleBuy = async (rewardId: string) => {
+    setBuying(rewardId);
     try {
-      await onRequestRedemption(rewardId);
-      setRequestedIds(prev => new Set([...prev, rewardId]));
+      await onBuyReward(rewardId);
+      setBoughtIds(prev => new Set([...prev, rewardId]));
+      // Clear the "bought" flash after 2 seconds
+      setTimeout(() => {
+        setBoughtIds(prev => {
+          const next = new Set(prev);
+          next.delete(rewardId);
+          return next;
+        });
+      }, 2000);
     } catch (err) {
       console.error(err);
     } finally {
-      setRequesting(null);
+      setBuying(null);
     }
   };
 
   if (active.length === 0) return null;
-
-  const canAfford = active.filter(r => balance >= r.pointCost);
-  if (balance >= (active[0]?.pointCost ?? Infinity) && canAfford.length > 0) {
-    // Show nudge banner handled by parent
-  }
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {active.map(reward => {
           const affordable = balance >= reward.pointCost;
-          const isPending = pendingRequestIds.has(reward.id) || requestedIds.has(reward.id);
+          const isBuying = buying === reward.id;
+          const justBought = boughtIds.has(reward.id);
           const isGoal = goalRewardIds.includes(reward.id);
           const progress = Math.min((balance / reward.pointCost) * 100, 100);
 
           return (
             <div
               key={reward.id}
-              className={`relative flex flex-col rounded-3xl border-2 p-5 transition-all ${
+              className={`relative flex flex-col rounded-3xl border p-5 transition-all duration-200 ${
                 affordable
-                  ? 'border-amber-300 bg-gradient-to-br from-amber-50 to-yellow-50 shadow-lg shadow-amber-200/40'
-                  : 'border-slate-200 bg-white'
-              } ${affordable ? 'animate-pulse-slow' : ''}`}
+                  ? 'border-amber-200 bg-amber-50 shadow-md shadow-amber-100/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-100/80'
+                  : 'border-slate-100 bg-white shadow-sm hover:-translate-y-0.5 hover:shadow-md'
+              }`}
             >
               {/* Goal toggle */}
               <button
@@ -86,7 +90,7 @@ export function RewardsCatalog({
                 <Sparkles size={14} />
               </button>
 
-              <div className="mb-3 text-3xl">{reward.icon || '🎁'}</div>
+              {renderRewardIcon(reward.icon)}
               <h4 className="mb-1 font-black text-slate-900">{reward.title}</h4>
               {reward.description && (
                 <p className="mb-3 text-xs text-slate-500">{reward.description}</p>
@@ -96,10 +100,10 @@ export function RewardsCatalog({
               <div className="mb-3 mt-auto">
                 <div className="mb-1 flex justify-between text-xs font-bold">
                   <span className={affordable ? 'text-amber-700' : 'text-slate-400'}>
-                    {balance} / {reward.pointCost} pts
+                    {fmtPts(balance)} / {fmtPts(reward.pointCost)} pts
                   </span>
                   {!affordable && (
-                    <span className="text-slate-400">{reward.pointCost - balance} more needed</span>
+                    <span className="text-slate-400">{fmtPts(reward.pointCost - balance)} more needed</span>
                   )}
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -118,27 +122,29 @@ export function RewardsCatalog({
               {affordable ? (
                 <button
                   type="button"
-                  disabled={isPending || requesting === reward.id}
-                  onClick={() => handleRequest(reward.id)}
+                  disabled={isBuying || justBought}
+                  onClick={() => handleBuy(reward.id)}
                   className={`${btnBase} ${btnPress} w-full rounded-2xl py-2.5 text-sm font-black uppercase tracking-wide transition-all ${
-                    isPending
-                      ? 'cursor-default bg-slate-100 text-slate-400'
-                      : 'bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-900 shadow-md shadow-amber-300/50'
+                    justBought
+                      ? 'cursor-default bg-emerald-100 text-emerald-700'
+                      : 'bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-900 shadow-md shadow-amber-300/50 disabled:opacity-60'
                   }`}
                 >
-                  {isPending ? (
+                  {justBought ? (
                     <span className="flex items-center justify-center gap-1.5">
-                      <Clock size={14} /> Requested ⏳
+                      <CheckCircle2 size={14} /> Added to Stash!
                     </span>
-                  ) : requesting === reward.id ? (
-                    'Sending…'
+                  ) : isBuying ? (
+                    'Buying…'
                   ) : (
-                    '🙋 Ask Parent'
+                    <span className="flex items-center justify-center gap-1.5">
+                      <ShoppingCart size={14} /> Buy Now
+                    </span>
                   )}
                 </button>
               ) : (
-                <div className="flex items-center justify-center gap-1.5 rounded-2xl bg-slate-100 py-2.5 text-xs font-black uppercase tracking-wide text-slate-400">
-                  <Lock size={12} /> {reward.pointCost} pts needed
+                <div className="flex items-center justify-center gap-1.5 rounded-2xl bg-slate-50 py-2.5 text-xs font-semibold text-slate-400 ring-1 ring-slate-200/80">
+                  <Lock size={11} className="opacity-60" /> {fmtPts(reward.pointCost)} pts needed
                 </div>
               )}
             </div>

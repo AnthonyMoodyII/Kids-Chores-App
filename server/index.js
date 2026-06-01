@@ -20,7 +20,7 @@ const DEFAULT_PARENT_PASSWORD = 'changeme';
 // ── Points helper ─────────────────────────────────────────────────────────────
 // 10 pt base for all chores + Math.round(baseValue * 4) scaled on top
 function chorePointsPerDay(baseValue) {
-  return 10 + Math.round(baseValue * 4);
+  return Math.max(10, 10 + Math.round(baseValue * 4));
 }
 
 // ── Notification helpers ──────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ app.get('/api/templates', async (req, res) => {
 });
 
 app.post('/api/templates', async (req, res) => {
-  const { title, baseValue, isMandatory, maxPerDay, isInPool } = req.body;
+  const { title, baseValue, isMandatory, maxPerDay, isInPool, icon } = req.body;
   const template = await prisma.choreTemplate.create({
     data: {
       title,
@@ -203,6 +203,7 @@ app.post('/api/templates', async (req, res) => {
       isMandatory: isMandatory || false,
       maxPerDay: maxPerDay != null ? parseInt(maxPerDay) : 1,
       isInPool: isInPool !== undefined ? Boolean(isInPool) : true,
+      icon: icon || null,
     },
   });
   res.json(template);
@@ -210,12 +211,13 @@ app.post('/api/templates', async (req, res) => {
 
 app.put('/api/templates/:id', async (req, res) => {
   const { id } = req.params;
-  const { title, baseValue, maxPerDay, isInPool } = req.body;
+  const { title, baseValue, maxPerDay, isInPool, icon } = req.body;
   const data = {};
   if (title !== undefined) data.title = title;
   if (baseValue !== undefined) data.baseValue = parseFloat(baseValue);
   if (maxPerDay !== undefined) data.maxPerDay = Math.max(1, parseInt(maxPerDay));
   if (isInPool !== undefined) data.isInPool = Boolean(isInPool);
+  if (icon !== undefined) data.icon = icon || null;
   const template = await prisma.choreTemplate.update({ where: { id }, data });
   res.json(template);
 });
@@ -270,6 +272,7 @@ app.post('/api/chores/assign', async (req, res) => {
         completedDays: [],
         isApproved: false,
         isArchived: false,
+        icon: template.icon || null,
       },
     });
     newChores.push(chore);
@@ -338,7 +341,7 @@ app.post('/api/chores/:id/toggle', async (req, res) => {
       notify(
         'choreComplete',
         `⭐ ${kid?.name} earned points!`,
-        `${kid?.name} completed "${chore.title}" and earned ${ptsPerDay} pts`,
+        `${kid?.name} completed "${chore.title}" on ${day} and earned ${ptsPerDay} pts`,
         `<p>⭐ <strong>${kid?.name}</strong> completed <em>${chore.title}</em> on ${day} and earned <strong>+${ptsPerDay} pts</strong>.</p>`,
       ).catch(() => {});
     }
@@ -405,18 +408,10 @@ app.post('/api/chores/reset', async (req, res) => {
       ledgerAdj[e.childId] = (ledgerAdj[e.childId] || 0) + e.amount;
     }
 
-    // 2. Create carry-forward ledger entry per kid
-    const today = new Date().toISOString().split('T')[0];
+    // 2. Wipe ALL ledger entries for every kid — points do not carry forward.
+    //    Money owed is tracked separately via PayoutRecord / CashPayment.
     for (const kid of kids) {
-      const balance = Math.max(0, (weeklyEarned[kid.id] || 0) + (ledgerAdj[kid.id] || 0));
-      await prisma.pointLedger.deleteMany({
-        where: { childId: kid.id, NOT: [{ reason: { startsWith: 'Completed:' } }, { reason: { startsWith: 'Unchecked:' } }, { reason: { startsWith: '7-day streak bonus:' } }, { reason: { startsWith: 'Streak bonus reversed:' } }, { reason: { startsWith: 'Optional:' } }] },
-      });
-      if (balance > 0) {
-        await prisma.pointLedger.create({
-          data: { childId: kid.id, amount: balance, reason: `Week carry-forward: ${today}` },
-        });
-      }
+      await prisma.pointLedger.deleteMany({ where: { childId: kid.id } });
     }
 
     // 3. Clear mandatory chore completedDays and approval
@@ -487,6 +482,7 @@ app.delete('/api/payouts', async (req, res) => {
 
 app.post('/api/payouts/:kidId', async (req, res) => {
   const { kidId } = req.params;
+  const { customAmount } = req.body; // optional: parent-specified partial amount
   const kid = await prisma.user.findUnique({ where: { id: kidId } });
   const approvedChores = await prisma.chore.findMany({
     where: { assignedTo: kidId, isApproved: true, isArchived: false },
@@ -507,7 +503,12 @@ app.post('/api/payouts/:kidId', async (req, res) => {
   const selections = await prisma.dailyChoreSelection.findMany({ where: { childId: kidId, weekOf } });
   const optionalAmount = selections.reduce((sum, s) => sum + optionalDollarPerCompletion(s.baseValue) * s.completions, 0);
 
-  const totalAmount = mandatoryAmount + optionalAmount;
+  const calculatedAmount = mandatoryAmount + optionalAmount;
+  // Use parent-specified amount if provided (capped at calculated, min $0.01)
+  const totalAmount = customAmount != null
+    ? Math.min(Math.max(0.01, parseFloat(customAmount)), calculatedAmount)
+    : calculatedAmount;
+
   const choreNames = [
     ...approvedChores.map(c => c.title),
     ...selections.filter(s => s.completions > 0).map(s => `${s.title} (optional ×${s.completions})`),
@@ -668,6 +669,7 @@ app.post('/api/daily-selections', async (req, res) => {
       title: template.title,
       baseValue: template.baseValue,
       maxPerDay: template.maxPerDay,
+      icon: template.icon || null,
       day,
       weekOf,
       completions: 0,
@@ -709,7 +711,7 @@ app.post('/api/daily-selections/:id/complete', async (req, res) => {
   notify(
     'choreComplete',
     `⭐ ${selection.childName} earned points!`,
-    `${selection.childName} completed "${selection.title}" (optional) and earned ${ptsPerCompletion} pts`,
+    `${selection.childName} completed "${selection.title}" on ${selection.day} (optional) and earned ${ptsPerCompletion} pts`,
     `<p>⭐ <strong>${selection.childName}</strong> completed <em>${selection.title}</em> (optional pick) on ${selection.day} and earned <strong>+${ptsPerCompletion} pts</strong>.</p>`,
   ).catch(() => {});
 
@@ -810,7 +812,7 @@ app.delete('/api/rewards/:id', async (req, res) => {
 // Labels for ledger entries that come from chore toggle events.
 // These are intentionally excluded from the balance sum because
 // completedDays / dailyChoreSelections are the authoritative source.
-const CHORE_ENTRY_PREFIXES = ['Completed:', 'Unchecked:', '7-day streak bonus:', 'Streak bonus reversed:', 'Optional:'];
+const CHORE_ENTRY_PREFIXES = ['Completed:', 'Unchecked:', '7-day streak bonus:', 'Streak bonus reversed:', 'Optional:', 'Undo optional:'];
 function isChoreEntry(reason) {
   return CHORE_ENTRY_PREFIXES.some(p => reason.startsWith(p));
 }
@@ -948,6 +950,116 @@ app.post('/api/points/redemptions/:id/unuse', async (req, res) => {
   res.json(updated);
 });
 
+// Kid requests parent approval to USE a reward from their inventory
+app.post('/api/points/redemptions/:id/request-use', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+  if (redemption.usedAt) return res.status(400).json({ error: 'Reward already used' });
+
+  const useApprovalToken = require('crypto').randomBytes(24).toString('hex');
+  const updated = await prisma.rewardRedemption.update({
+    where: { id },
+    data: { useApprovalToken },
+  });
+
+  const approveUrl = `${getBaseUrl()}/api/approve-reward-use?token=${useApprovalToken}`;
+  const denyUrl = `${getBaseUrl()}/api/deny-reward-use?token=${useApprovalToken}`;
+
+  await notify(
+    'rewardRequest',
+    `🎁 ${redemption.childName} wants to use a reward`,
+    `${redemption.childName} wants to use "${redemption.rewardTitle}". Approve: ${approveUrl} | Deny: ${denyUrl}`,
+    `<p>🎁 <strong>${redemption.childName}</strong> wants to use <em>${redemption.rewardTitle}</em>.</p>
+<p>
+  <a href="${approveUrl}" style="display:inline-block;padding:10px 20px;background:#7c3aed;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-right:8px">✅ Approve</a>
+  <a href="${denyUrl}" style="display:inline-block;padding:10px 20px;background:#ef4444;color:white;border-radius:8px;text-decoration:none;font-weight:bold">❌ Deny</a>
+</p>`,
+  );
+
+  res.json(updated);
+});
+
+// Parent approves a reward "use" request via deep link token
+app.get('/api/approve-reward-use', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.redirect(`${getBaseUrl()}/?reward_use=missing_token`);
+
+  const appUrl = getBaseUrl();
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { useApprovalToken: String(token) } });
+  if (!redemption) {
+    const msg = 'already_handled';
+    return res.redirect(`${appUrl}/?reward_use=${msg}`);
+  }
+
+  await prisma.rewardRedemption.update({
+    where: { id: redemption.id },
+    data: { usedAt: new Date(), useApprovalToken: null },
+  });
+
+  await notify(
+    'rewardApproved',
+    `✅ ${redemption.childName} can use their reward!`,
+    `${redemption.childName}'s request to use "${redemption.rewardTitle}" was approved`,
+    `<p>✅ <strong>${redemption.childName}</strong>'s request to use <em>${redemption.rewardTitle}</em> was approved.</p>`,
+  );
+
+  return res.redirect(`${appUrl}/?reward_use=approved&kid=${encodeURIComponent(redemption.childName)}&reward=${encodeURIComponent(redemption.rewardTitle)}`);
+});
+
+// Parent denies a reward "use" request via deep link token
+app.get('/api/deny-reward-use', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.redirect(`${getBaseUrl()}/?reward_use=missing_token`);
+
+  const appUrl = getBaseUrl();
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { useApprovalToken: String(token) } });
+  if (!redemption) {
+    return res.redirect(`${appUrl}/?reward_use=already_handled`);
+  }
+
+  await prisma.rewardRedemption.update({
+    where: { id: redemption.id },
+    data: { useApprovalToken: null },
+  });
+
+  await notify(
+    'rewardApproved',
+    `❌ ${redemption.childName}'s reward use request was denied`,
+    `${redemption.childName}'s request to use "${redemption.rewardTitle}" was denied`,
+    `<p>❌ <strong>${redemption.childName}</strong>'s request to use <em>${redemption.rewardTitle}</em> was denied.</p>`,
+  );
+
+  return res.redirect(`${appUrl}/?reward_use=denied&kid=${encodeURIComponent(redemption.childName)}&reward=${encodeURIComponent(redemption.rewardTitle)}`);
+});
+
+// Parent approves a "use" request from the dashboard (by redemption ID)
+app.put('/api/points/redemptions/:id/approve-use', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+  if (redemption.usedAt) return res.status(400).json({ error: 'Already used' });
+
+  const updated = await prisma.rewardRedemption.update({
+    where: { id },
+    data: { usedAt: new Date(), useApprovalToken: null },
+  });
+  res.json(updated);
+});
+
+// Parent denies a "use" request from the dashboard (by redemption ID)
+app.put('/api/points/redemptions/:id/deny-use', async (req, res) => {
+  const { id } = req.params;
+  const redemption = await prisma.rewardRedemption.findUnique({ where: { id } });
+  if (!redemption) return res.status(404).json({ error: 'Redemption not found' });
+
+  const updated = await prisma.rewardRedemption.update({
+    where: { id },
+    data: { useApprovalToken: null },
+  });
+  res.json(updated);
+});
+
 // Delete a redemption and refund points
 app.delete('/api/points/redemptions/:id', async (req, res) => {
   const { id } = req.params;
@@ -1003,15 +1115,17 @@ app.post('/api/redemption-requests', async (req, res) => {
   });
 
   const approvalUrl = `${getBaseUrl()}/api/approve-reward?token=${approvalToken}`;
+  const denyUrl = `${getBaseUrl()}/api/deny-reward?token=${approvalToken}`;
   notify(
     'rewardRequest',
     `🎁 ${childName} wants a reward`,
-    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).`,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts). Approve: ${approvalUrl} | Deny: ${denyUrl}`,
     `<p>🎁 <strong>${childName}</strong> wants to redeem <em>${reward.title}</em> (<strong>${reward.pointCost} pts</strong>).</p>
-<p style="margin-top:16px">
-  <a href="${approvalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">✅ Approve Now</a>
+<p style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap">
+  <a href="${approvalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">✅ Approve</a>
+  <a href="${denyUrl}" style="display:inline-block;background:#e11d48;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">❌ Deny</a>
 </p>
-<p style="font-size:12px;color:#64748b;margin-top:8px">Or open the parent portal to approve from the dashboard.</p>`,
+<p style="font-size:12px;color:#64748b;margin-top:8px">Or open the parent portal to manage from the dashboard.</p>`,
     approvalUrl,
   ).catch(() => {});
 
@@ -1077,6 +1191,36 @@ app.get('/api/approve-reward', async (req, res) => {
   // Redirect to the app with a success indicator
   const appUrl = getBaseUrl();
   return res.redirect(`${appUrl}/?reward_approval=approved&kid=${encodeURIComponent(request.childName)}&reward=${encodeURIComponent(request.rewardTitle)}`);
+});
+
+// ── One-click DENY via deep link ──────────────────────────────────────────────
+app.get('/api/deny-reward', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).send('Missing token.');
+
+  const request = await prisma.redemptionRequest.findUnique({ where: { approvalToken: String(token) } });
+  if (!request) return res.status(404).send('Invalid or expired denial link.');
+
+  const appUrl = getBaseUrl();
+  if (request.status !== 'pending') {
+    const msg = request.status === 'approved' ? 'already_approved' : 'already_handled';
+    return res.redirect(`${appUrl}/?reward_approval=${msg}`);
+  }
+
+  // Mark rejected and clear token so link can't be reused
+  await prisma.redemptionRequest.update({
+    where: { id: request.id },
+    data: { status: 'rejected', approvalToken: null },
+  });
+
+  notify(
+    'rewardApproved',
+    `❌ Reward request denied`,
+    `${request.childName}'s request for "${request.rewardTitle}" was denied`,
+    `<p>❌ <strong>${request.childName}</strong>'s request for <em>${request.rewardTitle}</em> (<strong>${request.pointCost} pts</strong>) was denied.</p>`,
+  ).catch(() => {});
+
+  return res.redirect(`${appUrl}/?reward_approval=denied&kid=${encodeURIComponent(request.childName)}&reward=${encodeURIComponent(request.rewardTitle)}`);
 });
 
 app.put('/api/redemption-requests/:id/approve', async (req, res) => {
@@ -1649,6 +1793,13 @@ async function runWeeklyCloseOut() {
 
   // Clear all daily selections for the week
   await prisma.dailyChoreSelection.deleteMany({ where: { weekOf } });
+
+  // Wipe all point ledger entries — points do NOT carry forward week to week.
+  // Money is already banked via PayoutRecord above.
+  const allKids = await prisma.user.findMany({ where: { role: 'child' } });
+  for (const kid of allKids) {
+    await prisma.pointLedger.deleteMany({ where: { childId: kid.id } });
+  }
 
   if (summaryLines.length > 0) {
     notify(

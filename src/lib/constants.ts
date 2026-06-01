@@ -7,17 +7,20 @@ export const DEFAULT_PARENT_USERNAME = 'parent';
 export const DEFAULT_PARENT_PASSWORD = 'changeme';
 
 export const DAYS = [
+  'Sunday',
   'Monday',
   'Tuesday',
   'Wednesday',
   'Thursday',
   'Friday',
   'Saturday',
-  'Sunday',
 ] as const;
 
 export const IMG_HOME = '/kids.jpg';
 export const IMG_KIDS = '/parents.jpg';
+
+/** Format a points number with thousands separator: 1000 → "1,000" */
+export const fmtPts = (n: number): string => Math.round(n).toLocaleString();
 
 /** Shared Tailwind class fragments */
 export const btnBase =
@@ -27,4 +30,4 @@ export const btnPress =
   'active:scale-[0.97] active:brightness-[0.97] active:shadow-inner hover:brightness-[1.02]';
 
 export const cardSurface =
-  'rounded-[1.75rem] border border-white/60 bg-white/80 shadow-[0_8px_40px_-12px_rgba(15,23,42,0.12)] backdrop-blur-sm';
+  'rounded-[1.75rem] border border-slate-100 bg-white shadow-[0_2px_1px_rgba(0,0,0,0.03),0_6px_28px_-6px_rgba(109,40,217,0.07),0_1px_4px_rgba(0,0,0,0.04)]';

@@ -21,6 +21,7 @@ model ChoreTemplate {
   isMandatory Boolean  @default(false)
   maxPerDay   Int      @default(1)
   isInPool    Boolean  @default(true)
+  icon        String?
 }
 
 model Chore {
@@ -33,6 +34,7 @@ model Chore {
   completedDays String[]
   isApproved    Boolean  @default(false)
   isArchived    Boolean  @default(false)
+  icon          String?
   user          User     @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
 }
 
@@ -96,7 +98,8 @@ model RewardRedemption {
   rewardTitle      String
   pointCost        Int
   timestamp        DateTime  @default(now())
-  usedAt           DateTime? // null = in inventory (approved but not yet enjoyed)
+  usedAt           DateTime? // null = in inventory; set = used/redeemed
+  useApprovalToken String?   @unique // one-time token for parent to approve "use" request
 }
 
 model RewardRequest {
@@ -132,6 +135,7 @@ model DailyChoreSelection {
   title       String
   baseValue   Float
   maxPerDay   Int      @default(1)
+  icon        String?
   day         String
   weekOf      String
   completions Int      @default(0)

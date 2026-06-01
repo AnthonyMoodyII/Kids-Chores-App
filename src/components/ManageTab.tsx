@@ -37,6 +37,7 @@ export function ManageTab({
   const [newTemplateIsMandatory, setNewTemplateIsMandatory] = useState(false);
   const [newTemplateMaxPerDay, setNewTemplateMaxPerDay] = useState('1');
   const [newTemplateIsInPool, setNewTemplateIsInPool] = useState(true);
+  const [newChoreIcon, setNewChoreIcon] = useState('');
 
   // Inline editing of existing templates
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -44,7 +45,9 @@ export function ManageTab({
   const [editValue, setEditValue] = useState('');
   const [editMaxPerDay, setEditMaxPerDay] = useState('1');
   const [editIsInPool, setEditIsInPool] = useState(true);
+  const [editChoreIcon, setEditChoreIcon] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [choreIconPickerOpen, setChoreIconPickerOpen] = useState<string | null>(null); // 'new' or template id
 
   // Multi-select for chore templates
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
@@ -119,6 +122,39 @@ export function ManageTab({
     };
     reader.readAsDataURL(file);
     e.target.value = ''; // allow re-selecting the same file next time
+  };
+
+  // Separate file input for chore icons
+  const choreFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleChoreIconFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const size = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL('image/png');
+        saveCustomIcon(dataUrl);
+        const target = choreIconPickerOpen;
+        if (target === 'new') {
+          setNewChoreIcon(dataUrl);
+        } else if (target) {
+          setEditChoreIcon(dataUrl);
+        }
+        setChoreIconPickerOpen(null);
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Helper: render either a URL / data-URL image or an emoji string
@@ -214,6 +250,7 @@ export function ManageTab({
           isMandatory: newTemplateIsMandatory,
           maxPerDay: Math.min(10, Math.max(1, parseInt(newTemplateMaxPerDay) || 1)),
           isInPool: newTemplateIsInPool,
+          icon: newChoreIcon || undefined,
         }),
       });
       if (!response.ok) throw new Error('Failed to create template');
@@ -223,6 +260,7 @@ export function ManageTab({
       setNewTemplateIsMandatory(false);
       setNewTemplateMaxPerDay('1');
       setNewTemplateIsInPool(true);
+      setNewChoreIcon('');
     } catch (error) {
       console.error(error);
     }
@@ -266,6 +304,7 @@ export function ManageTab({
     setEditValue(t.baseValue.toFixed(2));
     setEditMaxPerDay(String(t.maxPerDay ?? 1));
     setEditIsInPool(t.isInPool !== false);
+    setEditChoreIcon(t.icon || '');
   };
 
   const cancelEditTemplate = () => {
@@ -283,6 +322,7 @@ export function ManageTab({
           baseValue: parseFloat(editValue) || 0,
           maxPerDay: Math.min(10, Math.max(1, parseInt(editMaxPerDay) || 1)),
           isInPool: editIsInPool,
+          icon: editChoreIcon || undefined,
         }),
       });
       if (!res.ok) throw new Error('Failed to update template');
@@ -383,13 +423,21 @@ export function ManageTab({
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      {/* Hidden file input shared by all icon pickers */}
+      {/* Hidden file input for reward icon pickers */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         className="hidden"
         onChange={handleIconFileUpload}
+      />
+      {/* Hidden file input for chore icon pickers */}
+      <input
+        ref={choreFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleChoreIconFileUpload}
       />
 
       {/* ── Top row: Library + Assignment workspace ────────────────────────── */}
@@ -453,14 +501,116 @@ export function ManageTab({
                         ✏️ Editing: {t.title}
                       </p>
                       <div className="space-y-3">
-                        <input
-                          type="text"
-                          placeholder="Chore name"
-                          className="w-full rounded-xl border border-white bg-white px-4 py-2.5 font-bold text-slate-800 outline-none ring-indigo-400/30 focus:ring-2"
-                          value={editTitle}
-                          onChange={e => setEditTitle(e.target.value)}
-                          autoFocus
-                        />
+                        <div className="flex gap-2">
+                          {/* Chore icon picker — edit */}
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => { setUrlIconInput(''); setUrlIconError(''); setChoreIconPickerOpen(choreIconPickerOpen === t.id ? null : t.id); }}
+                              className={`${btnBase} flex h-10 w-12 items-center justify-center rounded-xl border border-white bg-white hover:border-indigo-300`}
+                              title="Pick icon"
+                            >
+                              {renderIcon(editChoreIcon || '📋', 'text-2xl')}
+                            </button>
+                            {choreIconPickerOpen === t.id && (
+                              <>
+                                <div className="fixed inset-0 z-40" onClick={() => setChoreIconPickerOpen(null)} />
+                                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-indigo-100 bg-white p-3 shadow-2xl">
+                                  {customIcons.length > 0 && (
+                                    <div className="mb-2">
+                                      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {customIcons.map(url => (
+                                          <div key={url} className="group relative">
+                                            <button
+                                              type="button"
+                                              onClick={() => { setEditChoreIcon(url); setChoreIconPickerOpen(null); }}
+                                              className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50`}
+                                              title={url}
+                                            >
+                                              <img src={url} className="h-6 w-6 object-contain" alt="icon" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={ev => { ev.stopPropagation(); removeCustomIcon(url); }}
+                                              className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
+                                              title="Remove"
+                                            >×</button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <hr className="my-2 border-slate-100" />
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-10 gap-0.5 mb-2">
+                                    {EMOJI_OPTIONS.map(em => (
+                                      <button
+                                        key={em}
+                                        type="button"
+                                        onClick={() => { setEditChoreIcon(em); setChoreIconPickerOpen(null); }}
+                                        className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-indigo-50`}
+                                      >{em}</button>
+                                    ))}
+                                  </div>
+                                  <div className="border-t border-slate-100 pt-2">
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="url"
+                                        placeholder="https://..."
+                                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-indigo-400/30 focus:border-indigo-300 focus:ring-2"
+                                        value={urlIconInput}
+                                        onChange={ev => { setUrlIconInput(ev.target.value); setUrlIconError(''); }}
+                                        onClick={ev => ev.stopPropagation()}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={ev => {
+                                          ev.stopPropagation();
+                                          const url = urlIconInput.trim();
+                                          if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
+                                          saveCustomIcon(url);
+                                          setEditChoreIcon(url);
+                                          setUrlIconInput('');
+                                          setChoreIconPickerOpen(null);
+                                        }}
+                                        className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-indigo-600 px-2 py-1 text-xs font-black text-white`}
+                                      >Use</button>
+                                    </div>
+                                    {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
+                                  </div>
+                                  <div className="border-t border-slate-100 pt-2">
+                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
+                                    <button
+                                      type="button"
+                                      onClick={ev => { ev.stopPropagation(); choreFileInputRef.current?.click(); }}
+                                      className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700`}
+                                    >
+                                      📁 Upload PNG / image file
+                                    </button>
+                                  </div>
+                                  <a
+                                    href="https://www.magnific.com/icons/copy-paste"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-2 flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700"
+                                    onClick={() => setChoreIconPickerOpen(null)}
+                                  >
+                                    🔍 Browse more icons at Magnific →
+                                  </a>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Chore name"
+                            className="flex-1 rounded-xl border border-white bg-white px-4 py-2.5 font-bold text-slate-800 outline-none ring-indigo-400/30 focus:ring-2"
+                            value={editTitle}
+                            onChange={e => setEditTitle(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
                         <div className="flex flex-wrap gap-3">
                           <div className="flex items-center gap-2">
                             <label className="text-xs font-black uppercase tracking-wide text-slate-500">$ Value</label>
@@ -538,9 +688,16 @@ export function ManageTab({
                       {isSelected && <Check size={12} strokeWidth={3} className="text-white" />}
                     </div>
 
+                    {/* Chore icon */}
+                    {t.icon && (
+                      <div className="shrink-0">
+                        {renderIcon(t.icon, 'text-lg leading-none')}
+                      </div>
+                    )}
+
                     {/* Chore info */}
                     <div className="min-w-0 flex-1">
-                      <p className={`truncate font-bold flex items-center gap-1.5 ${isSelected ? 'text-violet-900' : 'text-slate-800'}`}>
+                      <p className={`break-words font-bold flex flex-wrap items-center gap-1.5 ${isSelected ? 'text-violet-900' : 'text-slate-800'}`}>
                         {t.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
                         {t.title}
                       </p>
@@ -609,13 +766,115 @@ export function ManageTab({
               onSubmit={handleAddTemplate}
               className="mt-3 space-y-3 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/90 to-white p-4"
             >
-              <input
-                type="text"
-                placeholder="Chore name"
-                className="w-full rounded-xl border border-white bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
-                value={newTemplateTitle}
-                onChange={e => setNewTemplateTitle(e.target.value)}
-              />
+              <div className="flex gap-2">
+                {/* Chore icon picker — new */}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => { setUrlIconInput(''); setUrlIconError(''); setChoreIconPickerOpen(choreIconPickerOpen === 'new' ? null : 'new'); }}
+                    className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white hover:border-emerald-300`}
+                    title="Pick icon"
+                  >
+                    {renderIcon(newChoreIcon || '📋', 'text-2xl')}
+                  </button>
+                  {choreIconPickerOpen === 'new' && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setChoreIconPickerOpen(null)} />
+                      <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-emerald-100 bg-white p-3 shadow-2xl">
+                        {customIcons.length > 0 && (
+                          <div className="mb-2">
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
+                            <div className="flex flex-wrap gap-1">
+                              {customIcons.map(url => (
+                                <div key={url} className="group relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setNewChoreIcon(url); setChoreIconPickerOpen(null); }}
+                                    className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50`}
+                                    title={url}
+                                  >
+                                    <img src={url} className="h-6 w-6 object-contain" alt="icon" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={ev => { ev.stopPropagation(); removeCustomIcon(url); }}
+                                    className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
+                                    title="Remove"
+                                  >×</button>
+                                </div>
+                              ))}
+                            </div>
+                            <hr className="my-2 border-slate-100" />
+                          </div>
+                        )}
+                        <div className="grid grid-cols-10 gap-0.5 mb-2">
+                          {EMOJI_OPTIONS.map(em => (
+                            <button
+                              key={em}
+                              type="button"
+                              onClick={() => { setNewChoreIcon(em); setChoreIconPickerOpen(null); }}
+                              className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-emerald-50`}
+                            >{em}</button>
+                          ))}
+                        </div>
+                        <div className="border-t border-slate-100 pt-2">
+                          <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
+                          <div className="flex gap-1">
+                            <input
+                              type="url"
+                              placeholder="https://..."
+                              className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-emerald-400/30 focus:border-emerald-300 focus:ring-2"
+                              value={urlIconInput}
+                              onChange={ev => { setUrlIconInput(ev.target.value); setUrlIconError(''); }}
+                              onClick={ev => ev.stopPropagation()}
+                            />
+                            <button
+                              type="button"
+                              onClick={ev => {
+                                ev.stopPropagation();
+                                const url = urlIconInput.trim();
+                                if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
+                                saveCustomIcon(url);
+                                setNewChoreIcon(url);
+                                setUrlIconInput('');
+                                setChoreIconPickerOpen(null);
+                              }}
+                              className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-emerald-600 px-2 py-1 text-xs font-black text-white`}
+                            >Use</button>
+                          </div>
+                          {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
+                        </div>
+                        <div className="border-t border-slate-100 pt-2">
+                          <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
+                          <button
+                            type="button"
+                            onClick={ev => { ev.stopPropagation(); choreFileInputRef.current?.click(); }}
+                            className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700`}
+                          >
+                            📁 Upload PNG / image file
+                          </button>
+                        </div>
+                        <a
+                          href="https://www.magnific.com/icons/copy-paste"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700"
+                          onClick={() => setChoreIconPickerOpen(null)}
+                        >
+                          🔍 Browse more icons at Magnific →
+                        </a>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Chore name"
+                  className="flex-1 rounded-xl border border-white bg-white px-4 py-3 font-bold text-slate-800 outline-none ring-emerald-500/30 focus:ring-2"
+                  value={newTemplateTitle}
+                  onChange={e => setNewTemplateTitle(e.target.value)}
+                />
+              </div>
               <label className="flex w-fit cursor-pointer select-none items-center gap-2">
                 <input
                   type="checkbox"
@@ -922,7 +1181,7 @@ export function ManageTab({
                   className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm shadow-slate-100"
                 >
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 truncate font-bold text-slate-900">
+                    <p className="flex flex-wrap items-center gap-1.5 break-words font-bold text-slate-900">
                       {chore.isMandatory && <AlertCircle size={13} className="shrink-0 text-rose-500" />}
                       {chore.title}
                     </p>

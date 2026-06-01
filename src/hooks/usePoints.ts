@@ -104,6 +104,33 @@ export function usePoints() {
     setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
   }, []);
 
+  // Kid requests parent approval to use a reward from inventory
+  const requestRedemptionUse = useCallback(async (id: string) => {
+    const res = await fetch(`${API_URL}/api/points/redemptions/${id}/request-use`, { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to request use');
+    }
+    const updated: RewardRedemption = await res.json();
+    setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
+  }, []);
+
+  // Parent approves a use request from the dashboard
+  const approveRedemptionUse = useCallback(async (id: string) => {
+    const res = await fetch(`${API_URL}/api/points/redemptions/${id}/approve-use`, { method: 'PUT' });
+    if (!res.ok) throw new Error('Failed to approve use');
+    const updated: RewardRedemption = await res.json();
+    setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
+  }, []);
+
+  // Parent denies a use request from the dashboard
+  const denyRedemptionUse = useCallback(async (id: string) => {
+    const res = await fetch(`${API_URL}/api/points/redemptions/${id}/deny-use`, { method: 'PUT' });
+    if (!res.ok) throw new Error('Failed to deny use');
+    const updated: RewardRedemption = await res.json();
+    setRedemptions(prev => prev.map(r => r.id === id ? updated : r));
+  }, []);
+
   return {
     pointBalances,
     setPointBalances,
@@ -119,5 +146,8 @@ export function usePoints() {
     deleteRedemption,
     markRedemptionUsed,
     markRedemptionUnused,
+    requestRedemptionUse,
+    approveRedemptionUse,
+    denyRedemptionUse,
   };
 }

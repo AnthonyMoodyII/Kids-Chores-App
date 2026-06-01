@@ -1,6 +1,6 @@
 import { ShieldCheck, AlertCircle } from 'lucide-react';
 import type { Chore } from '../types';
-import { btnBase, btnPress } from '../lib/constants';
+import { btnBase, btnPress, fmtPts } from '../lib/constants';
 import { getChoreEarnedAmount } from '../lib/earnings';
 
 interface ChoreProgressRowsProps {
@@ -10,9 +10,9 @@ interface ChoreProgressRowsProps {
   onApprove?: (choreId: string) => void;
 }
 
-/** Mirror of server formula: 10 + Math.round(baseValue * 4) */
+/** Mirror of server formula: Math.max(10, 10 + Math.round(baseValue * 4)) */
 function chorePointsPerDay(baseValue: number) {
-  return 10 + Math.round(baseValue * 4);
+  return Math.max(10, 10 + Math.round(baseValue * 4));
 }
 
 export function ChoreProgressRows({
@@ -46,9 +46,9 @@ export function ChoreProgressRows({
                   </p>
                   {/* Points earned so far */}
                   <p className="text-[10px] font-black text-amber-600">
-                    ⭐ {ptsEarned} pts
+                    ⭐ {fmtPts(ptsEarned)} pts
                     <span className="ml-1 font-bold text-amber-400/80">
-                      (+{ptsPerDay}/day)
+                      (+{fmtPts(ptsPerDay)}/day)
                     </span>
                   </p>
                 </div>
@@ -64,7 +64,7 @@ export function ChoreProgressRows({
                     ${getChoreEarnedAmount(chore.completedDays.length, chore.baseValue).toFixed(2)}
                   </p>
                   {ptsEarned > 0 && (
-                    <p className="text-xs font-black text-amber-500">⭐ {ptsEarned}</p>
+                    <p className="text-xs font-black text-amber-500">⭐ {fmtPts(ptsEarned)}</p>
                   )}
                 </div>
                 {showParentApprove && chore.completedDays.length >= 4 && onApprove && (

@@ -4,13 +4,12 @@ import { cardSurface } from '../lib/constants';
 
 interface WeeklyEarningsTrackerProps {
   mandatoryChores: Chore[];        // kid's assigned (non-archived) chores
-  poolTemplates: ChoreTemplate[];  // all pool templates (isInPool=true)
+  poolTemplates?: ChoreTemplate[];  // unused — kept for API compat
   dailySelections: DailyChoreSelection[]; // all selections for this kid this week
 }
 
 export function WeeklyEarningsTracker({
   mandatoryChores,
-  poolTemplates,
   dailySelections,
 }: WeeklyEarningsTrackerProps) {
   // Mandatory earned so far this week
@@ -27,23 +26,15 @@ export function WeeklyEarningsTracker({
 
   const totalEarned = mandatoryEarned + optionalEarned;
 
-  // Potential max:
-  //   Mandatory: 7/7 days → (baseValue + $1 bonus) per chore
-  //   Optional: if kid did every pool chore once every day × 7 days
-  //             simplified to just mandatory potential since optional is truly unbounded
+  // Potential max: only mandatory chores at full 7/7 completion
+  // (optional is unbounded so we don't inflate the denominator with it)
   const mandatoryPotential = mandatoryChores.reduce(
     (sum, c) => sum + Math.round((c.baseValue + 1) * 100) / 100,
     0,
   );
 
-  // For pool: show potential if they pick every pool template once per remaining day
-  // We'll compute as if they'd done all pool chores once per day for 7 days
-  const optionalPotential = poolTemplates.reduce(
-    (sum, t) => sum + (t.baseValue / 5) * 7 * (t.maxPerDay ?? 1),
-    0,
-  );
-
-  const totalPotential = Math.max(totalEarned, mandatoryPotential + optionalPotential);
+  // Progress % is based on mandatory potential only so the bar fills meaningfully
+  const totalPotential = Math.max(totalEarned, mandatoryPotential);
 
   const pct = totalPotential > 0 ? Math.min(100, (totalEarned / totalPotential) * 100) : 0;
 
@@ -70,7 +61,7 @@ export function WeeklyEarningsTracker({
           />
         </div>
         <span className="text-xs font-bold text-slate-400">
-          max ${totalPotential.toFixed(2)}
+          / ${mandatoryPotential.toFixed(2)} goal
         </span>
       </div>
 

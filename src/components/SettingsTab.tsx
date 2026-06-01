@@ -314,7 +314,13 @@ function NotificationProvidersPanel({ currentPassword }: { currentPassword: stri
 
 // ── Main SettingsTab ──────────────────────────────────────────────────────────
 
-export function SettingsTab({ onPasswordChanged }: { onPasswordChanged: () => void }) {
+export function SettingsTab({
+  onPasswordChanged,
+  onClearAllPayouts,
+}: {
+  onPasswordChanged: () => void;
+  onClearAllPayouts?: () => void;
+}) {
   const [ns, setNs] = useState<NotificationSettings>(EMPTY_NS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -322,6 +328,7 @@ export function SettingsTab({ onPasswordChanged }: { onPasswordChanged: () => vo
   const [saveSuccess, setSaveSuccess] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   // Pushover fields
   const [poAppToken, setPoAppToken] = useState('');
@@ -603,6 +610,43 @@ export function SettingsTab({ onPasswordChanged }: { onPasswordChanged: () => vo
           </button>
         </form>
       </AccordionSection>
+
+      {/* Danger zone — clear payout history */}
+      {onClearAllPayouts && (
+        <div className="flex items-center justify-between rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-rose-500">Clear payout history</p>
+            <p className="text-[11px] text-slate-400">Permanently removes all payout records. Irreversible.</p>
+          </div>
+          {confirmClear ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-rose-600">Are you sure?</span>
+              <button
+                type="button"
+                onClick={() => { onClearAllPayouts(); setConfirmClear(false); }}
+                className={`${btnBase} ${btnPress} rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-black text-white`}
+              >
+                Yes, clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClear(false)}
+                className={`${btnBase} ${btnPress} rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-700`}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              className={`${btnBase} ${btnPress} shrink-0 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-black text-rose-500 hover:border-rose-400 hover:bg-rose-50`}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
