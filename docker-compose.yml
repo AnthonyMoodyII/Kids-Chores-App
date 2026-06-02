@@ -41,6 +41,16 @@ services:
     networks:
       - chore-network
 
+  watchtower:
+    image: containrrr/watchtower
+    container_name: chorehero_watchtower
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 30 chorehero_api chorehero_ui chorehero_db
+    networks:
+      - chore-network
+
 networks:
   chore-network:
     driver: bridge
