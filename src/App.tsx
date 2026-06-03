@@ -440,10 +440,7 @@ export default function ChoreApp() {
 
       <div className="mx-auto max-w-6xl">
         {/* ── Header ── */}
-        <header className="relative mb-10 grid gap-8 overflow-hidden rounded-[2rem] bg-[#0d0b1a] p-8 shadow-2xl shadow-slate-900/40 lg:grid-cols-[1fr_auto] lg:items-center">
-          {/* ambient glows */}
-          <div className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-violet-600/20 blur-3xl" />
-          <div className="pointer-events-none absolute bottom-0 right-8 h-48 w-64 rounded-full bg-indigo-700/15 blur-2xl" />
+        <header className="mb-10 grid gap-8 rounded-[2rem] bg-[#0d0b1a] p-8 shadow-2xl shadow-slate-900/40 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="text-left">
             <a
               href="/"
@@ -507,7 +504,7 @@ export default function ChoreApp() {
 
         {/* ── Nav ── */}
         <nav className="mb-10 flex justify-center">
-          <div className="flex gap-1.5 rounded-[2rem] border border-slate-200/60 bg-white/70 p-1.5 shadow-sm backdrop-blur-sm">
+          <div className="flex gap-1.5 rounded-[2rem] border border-slate-200/60 bg-white p-1.5 shadow-sm">
             <button type="button" onClick={() => setView('child')} className={navBtn(view === 'child')}>
               Kids
             </button>

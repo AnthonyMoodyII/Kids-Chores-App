@@ -380,7 +380,7 @@ export function MissionBoard({
                     return (
                       <div
                         key={t.id}
-                        className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                        className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"
                       >
                         {/* Icon + name */}
                         <div className="flex items-start gap-2">

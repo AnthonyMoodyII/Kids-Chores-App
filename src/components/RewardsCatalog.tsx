@@ -70,10 +70,10 @@ export function RewardsCatalog({
           return (
             <div
               key={reward.id}
-              className={`relative flex flex-col rounded-3xl border p-5 transition-all duration-200 ${
+              className={`relative flex flex-col rounded-3xl border p-5 ${
                 affordable
-                  ? 'border-amber-200 bg-amber-50 shadow-md shadow-amber-100/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-100/80'
-                  : 'border-slate-100 bg-white shadow-sm hover:-translate-y-0.5 hover:shadow-md'
+                  ? 'border-amber-200 bg-amber-50 shadow-md shadow-amber-100/60'
+                  : 'border-slate-100 bg-white shadow-sm'
               }`}
             >
               {/* Goal toggle */}

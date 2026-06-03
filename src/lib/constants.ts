@@ -24,7 +24,7 @@ export const fmtPts = (n: number): string => Math.round(n).toLocaleString();
 
 /** Shared Tailwind class fragments */
 export const btnBase =
-  'transition-all duration-200 ease-out select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2';
+  'transition-colors duration-150 ease-out select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2';
 
 export const btnPress =
   'active:scale-[0.97] active:brightness-[0.97] active:shadow-inner hover:brightness-[1.02]';
