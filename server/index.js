@@ -126,15 +126,23 @@ async function sendEmail(subject, htmlBody, textBody = '') {
   }
 }
 
-async function sendGotify(provider, title, message, actionUrl = null) {
+async function sendGotify(provider, title, message, approveUrl = null, denyUrl = null) {
   try {
     const { url, token, priority = 5 } = provider.config || {};
     if (!url || !token) return;
     const endpoint = url.replace(/\/$/, '') + '/message';
-    // Append deep link to message if provided (Gotify renders markdown)
-    const fullMessage = actionUrl
-      ? `${message}\n\n[✅ Approve now](${actionUrl})`
-      : message;
+
+    let fullMessage = message;
+    if (approveUrl && denyUrl) {
+      // Approval notifications — two labeled tappable links, no markdown
+      fullMessage += `\n\n✅ Approve:\n${approveUrl}\n\n❌ Deny:\n${denyUrl}`;
+    } else if (approveUrl) {
+      fullMessage += `\n\n✅ Approve:\n${approveUrl}`;
+    } else {
+      // Informational notifications — link back to the app
+      fullMessage += `\n\n🏠 ${getBaseUrl()}`;
+    }
+
     await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -149,7 +157,7 @@ async function sendGotify(provider, title, message, actionUrl = null) {
   }
 }
 
-async function notify(event, title, message, htmlBody, actionUrl = null, textBody = '') {
+async function notify(event, title, message, htmlBody, approveUrl = null, denyUrl = null, textBody = '') {
   const ns = await getNotifSettings();
   if (!ns) return;
   const eventMap = {
@@ -165,14 +173,14 @@ async function notify(event, title, message, htmlBody, actionUrl = null, textBod
   // Fan out to all enabled providers
   const providers = await prisma.notificationProvider.findMany({ where: { enabled: true } });
   const providerSends = providers.map(p => {
-    if (p.type === 'gotify') return sendGotify(p, title, message, actionUrl);
+    if (p.type === 'gotify') return sendGotify(p, title, message, approveUrl, denyUrl);
     return Promise.resolve();
   });
 
   const { html: wrappedHtml, text: wrappedText } = buildEmail(htmlBody || `<p>${message}</p>`, textBody || message);
 
   await Promise.all([
-    sendPushover(title, message, actionUrl),
+    sendPushover(title, message, approveUrl),
     sendEmail(title, wrappedHtml, wrappedText),
     ...providerSends,
   ]);
@@ -382,7 +390,7 @@ app.post('/api/chores/:id/toggle', async (req, res) => {
         'streakBonus',
         `🔥 ${kid?.name} hit a 7-day streak!`,
         `${kid?.name} completed "${chore.title}" all 7 days — streak bonus of ${bonus} pts awarded!`,
-        `<p>🔥 <strong>${kid?.name}</strong> completed <em>${chore.title}</em> all 7 days this week!</p><p>Streak bonus: <strong>+${bonus} pts</strong></p>`,
+        `<p>🔥 <strong><a href="${getBaseUrl()}" style="color:#7c3aed;text-decoration:none">${kid?.name}</a></strong> completed <em>${chore.title}</em> all 7 days this week!</p><p>Streak bonus: <strong>+${bonus} pts</strong></p>`,
       ).catch(() => {});
     } else {
       // Regular completion notification
@@ -391,7 +399,7 @@ app.post('/api/chores/:id/toggle', async (req, res) => {
         'choreComplete',
         `⭐ ${kid?.name} earned points!`,
         `${kid?.name} completed "${chore.title}" on ${day} and earned ${ptsPerDay} pts`,
-        `<p>⭐ <strong>${kid?.name}</strong> completed <em>${chore.title}</em> on ${day} and earned <strong>+${ptsPerDay} pts</strong>.</p>`,
+        `<p>⭐ <strong><a href="${getBaseUrl()}" style="color:#7c3aed;text-decoration:none">${kid?.name}</a></strong> completed <em>${chore.title}</em> on ${day} and earned <strong>+${ptsPerDay} pts</strong>.</p>`,
       ).catch(() => {});
     }
   } else {
@@ -761,7 +769,7 @@ app.post('/api/daily-selections/:id/complete', async (req, res) => {
     'choreComplete',
     `⭐ ${selection.childName} earned points!`,
     `${selection.childName} completed "${selection.title}" on ${selection.day} (optional) and earned ${ptsPerCompletion} pts`,
-    `<p>⭐ <strong>${selection.childName}</strong> completed <em>${selection.title}</em> (optional pick) on ${selection.day} and earned <strong>+${ptsPerCompletion} pts</strong>.</p>`,
+    `<p>⭐ <strong><a href="${getBaseUrl()}" style="color:#7c3aed;text-decoration:none">${selection.childName}</a></strong> completed <em>${selection.title}</em> (optional pick) on ${selection.day} and earned <strong>+${ptsPerCompletion} pts</strong>.</p>`,
   ).catch(() => {});
 
   res.json({ selection: updated, pointsAwarded: ptsPerCompletion });
@@ -1024,7 +1032,8 @@ app.post('/api/points/redemptions/:id/request-use', async (req, res) => {
 <p style="font-size:14px;color:#64748b;margin:0 0 4px">${redemption.pointCost} pts</p>
 ${approveButtons(approveUrl, denyUrl)}`,
     approveUrl,
-    `${redemption.childName} wants to use "${redemption.rewardTitle}".\n\nApprove: ${approveUrl}\n\nDeny: ${denyUrl}`,
+    denyUrl,
+    `${redemption.childName} wants to use "${redemption.rewardTitle}".\n\nApprove:\n${approveUrl}\n\nDeny:\n${denyUrl}`,
   );
 
   res.json(updated);
@@ -1175,7 +1184,8 @@ app.post('/api/redemption-requests', async (req, res) => {
 <p style="font-size:14px;color:#64748b;margin:0 0 4px">${reward.pointCost} pts</p>
 ${approveButtons(approvalUrl, denyUrl)}`,
     approvalUrl,
-    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).\n\nApprove: ${approvalUrl}\n\nDeny: ${denyUrl}`,
+    denyUrl,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).\n\nApprove:\n${approvalUrl}\n\nDeny:\n${denyUrl}`,
   ).catch(() => {});
 
   res.json(request);
