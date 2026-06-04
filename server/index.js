@@ -58,7 +58,53 @@ async function sendPushover(title, message, actionUrl = null) {
   }
 }
 
-async function sendEmail(subject, htmlBody) {
+// ── Email HTML wrapper ────────────────────────────────────────────────────────
+function buildEmail(bodyHtml, textBody = '') {
+  const siteUrl = getBaseUrl();
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moody Family Chores</title></head>
+<body style="margin:0;padding:0;background:#f7f6f3;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f6f3;padding:32px 16px">
+  <tr><td align="center">
+    <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%">
+      <tr>
+        <td style="background:#0d0b1a;border-radius:16px 16px 0 0;padding:16px 24px">
+          <a href="${siteUrl}" style="color:#a78bfa;font-weight:700;font-size:15px;text-decoration:none">🏠 Moody Family Chores</a>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#ffffff;padding:28px 24px;border-radius:0 0 16px 16px;border:1px solid #f1f0ee;border-top:none">
+          ${bodyHtml}
+          <p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #f1f0ee;font-size:12px;color:#94a3b8">
+            <a href="${siteUrl}" style="color:#7c3aed;text-decoration:none;font-weight:600">Open Moody Chores →</a>
+          </p>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+  return { html, text: textBody || '' };
+}
+
+// Reusable approve/deny button pair (table-based for email client compatibility)
+function approveButtons(approveUrl, denyUrl) {
+  return `
+<table cellpadding="0" cellspacing="0" style="margin-top:20px">
+  <tr>
+    <td style="padding-right:10px">
+      <a href="${approveUrl}" style="display:inline-block;background:#7c3aed;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:700;font-size:14px">✅ Approve</a>
+    </td>
+    <td>
+      <a href="${denyUrl}" style="display:inline-block;background:#e11d48;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:700;font-size:14px">❌ Deny</a>
+    </td>
+  </tr>
+</table>`;
+}
+
+async function sendEmail(subject, htmlBody, textBody = '') {
   try {
     const ns = await getNotifSettings();
     if (!ns || !ns.smtpEnabled || !ns.smtpHost || !ns.smtpUser || !ns.smtpFrom) return;
@@ -73,6 +119,7 @@ async function sendEmail(subject, htmlBody) {
       to: ns.smtpFrom,
       subject,
       html: htmlBody,
+      text: textBody,
     });
   } catch (err) {
     console.error('[email] send error:', err.message);
@@ -102,7 +149,7 @@ async function sendGotify(provider, title, message, actionUrl = null) {
   }
 }
 
-async function notify(event, title, message, htmlBody, actionUrl = null) {
+async function notify(event, title, message, htmlBody, actionUrl = null, textBody = '') {
   const ns = await getNotifSettings();
   if (!ns) return;
   const eventMap = {
@@ -122,9 +169,11 @@ async function notify(event, title, message, htmlBody, actionUrl = null) {
     return Promise.resolve();
   });
 
+  const { html: wrappedHtml, text: wrappedText } = buildEmail(htmlBody || `<p>${message}</p>`, textBody || message);
+
   await Promise.all([
     sendPushover(title, message, actionUrl),
-    sendEmail(title, htmlBody || `<p>${message}</p>`),
+    sendEmail(title, wrappedHtml, wrappedText),
     ...providerSends,
   ]);
 }
@@ -969,12 +1018,13 @@ app.post('/api/points/redemptions/:id/request-use', async (req, res) => {
   await notify(
     'rewardRequest',
     `🎁 ${redemption.childName} wants to use a reward`,
-    `${redemption.childName} wants to use "${redemption.rewardTitle}". Approve: ${approveUrl} | Deny: ${denyUrl}`,
-    `<p>🎁 <strong>${redemption.childName}</strong> wants to use <em>${redemption.rewardTitle}</em>.</p>
-<p>
-  <a href="${approveUrl}" style="display:inline-block;padding:10px 20px;background:#7c3aed;color:white;border-radius:8px;text-decoration:none;font-weight:bold;margin-right:8px">✅ Approve</a>
-  <a href="${denyUrl}" style="display:inline-block;padding:10px 20px;background:#ef4444;color:white;border-radius:8px;text-decoration:none;font-weight:bold">❌ Deny</a>
-</p>`,
+    `${redemption.childName} wants to use "${redemption.rewardTitle}".`,
+    `<p style="font-size:16px;margin:0 0 6px">🎁 <strong>${redemption.childName}</strong> wants to use a reward</p>
+<p style="font-size:22px;font-weight:800;margin:0 0 4px;color:#0d0b1a">${redemption.rewardTitle}</p>
+<p style="font-size:14px;color:#64748b;margin:0 0 4px">${redemption.pointCost} pts</p>
+${approveButtons(approveUrl, denyUrl)}`,
+    approveUrl,
+    `${redemption.childName} wants to use "${redemption.rewardTitle}".\n\nApprove: ${approveUrl}\n\nDeny: ${denyUrl}`,
   );
 
   res.json(updated);
@@ -1119,14 +1169,13 @@ app.post('/api/redemption-requests', async (req, res) => {
   notify(
     'rewardRequest',
     `🎁 ${childName} wants a reward`,
-    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts). Approve: ${approvalUrl} | Deny: ${denyUrl}`,
-    `<p>🎁 <strong>${childName}</strong> wants to redeem <em>${reward.title}</em> (<strong>${reward.pointCost} pts</strong>).</p>
-<p style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap">
-  <a href="${approvalUrl}" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">✅ Approve</a>
-  <a href="${denyUrl}" style="display:inline-block;background:#e11d48;color:#fff;text-decoration:none;padding:12px 24px;border-radius:12px;font-weight:900;font-size:14px">❌ Deny</a>
-</p>
-<p style="font-size:12px;color:#64748b;margin-top:8px">Or open the parent portal to manage from the dashboard.</p>`,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).`,
+    `<p style="font-size:16px;margin:0 0 6px">🎁 <strong>${childName}</strong> wants to redeem a reward</p>
+<p style="font-size:22px;font-weight:800;margin:0 0 4px;color:#0d0b1a">${reward.title}</p>
+<p style="font-size:14px;color:#64748b;margin:0 0 4px">${reward.pointCost} pts</p>
+${approveButtons(approvalUrl, denyUrl)}`,
     approvalUrl,
+    `${childName} wants to redeem "${reward.title}" (${reward.pointCost} pts).\n\nApprove: ${approvalUrl}\n\nDeny: ${denyUrl}`,
   ).catch(() => {});
 
   res.json(request);
