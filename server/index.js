@@ -134,13 +134,11 @@ async function sendGotify(provider, title, message, approveUrl = null, denyUrl =
 
     let fullMessage = message;
     if (approveUrl && denyUrl) {
-      // Approval notifications — two labeled tappable links, no markdown
-      fullMessage += `\n\n✅ Approve:\n${approveUrl}\n\n❌ Deny:\n${denyUrl}`;
+      fullMessage += `\n\n[✅ Approve](${approveUrl}) | [❌ Deny](${denyUrl})`;
     } else if (approveUrl) {
-      fullMessage += `\n\n✅ Approve:\n${approveUrl}`;
+      fullMessage += `\n\n[✅ Approve](${approveUrl})`;
     } else {
-      // Informational notifications — link back to the app
-      fullMessage += `\n\n🏠 ${getBaseUrl()}`;
+      fullMessage += `\n\n[🏠 Open Moody Chores](${getBaseUrl()})`;
     }
 
     await fetch(endpoint, {
@@ -149,7 +147,14 @@ async function sendGotify(provider, title, message, approveUrl = null, denyUrl =
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({ title, message: fullMessage, priority: Number(priority) }),
+      body: JSON.stringify({
+        title,
+        message: fullMessage,
+        priority: Number(priority),
+        extras: {
+          'client::display': { contentType: 'text/markdown' },
+        },
+      }),
       signal: AbortSignal.timeout(8000),
     });
   } catch (err) {
