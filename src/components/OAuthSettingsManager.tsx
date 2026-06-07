@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Settings, ExternalLink, ChevronDown, ChevronUp, Copy, Check, Trash2, Pencil, ShieldCheck, ShieldOff } from 'lucide-react';
 import { API_URL, cardSurface, btnBase, btnPress } from '../lib/constants';
 
-export function OAuthIcon({ size = 20 }: { size?: number }) {
+function OAuthIcon({ size = 20 }: { size?: number }) {
   return <Settings size={size} />;
 }
 

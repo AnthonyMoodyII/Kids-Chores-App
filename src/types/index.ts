@@ -70,7 +70,7 @@ export interface CashPayment {
 }
 
 /** Derived per-child stats computed from active chores. */
-export interface KidStats {
+interface KidStats {
   active: Chore[];
   approved: number;
   pending: number;

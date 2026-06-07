@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, RewardTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
+import { IconPickerDropdown } from './IconPickerDropdown';
 
 interface ManageTabProps {
   kids: User[];
@@ -68,8 +69,6 @@ export function ManageTab({
   const [newRewardDesc, setNewRewardDesc] = useState('');
   const [rewardCatalogOpen, setRewardCatalogOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState<string | null>(null); // reward id or 'new'
-  const [urlIconInput, setUrlIconInput] = useState('');
-  const [urlIconError, setUrlIconError] = useState('');
 
   // Custom icon URLs saved by user (persisted in localStorage)
   const [customIcons, setCustomIcons] = useState<string[]>(() => {
@@ -412,15 +411,6 @@ export function ManageTab({
     }
   };
 
-  const EMOJI_OPTIONS = [
-    '🎮','📺','🌙','🍕','🎬','🛒','🍦','🎉','🏆','⭐',
-    '🎁','🎯','🎲','🎸','🎨','🚀','🦄','🌈','🍰','🎪',
-    '🏄','🤿','🎠','🎡','🎢','🎭','🎵','🎤','🎧','🎻',
-    '🏀','⚽','🎾','🏊','🚴','🛹','🎿','🎳','🏓','🥋',
-    '🍫','🍿','🥤','🍩','🧁','🍪','🍓','🍉','🍭','🥳',
-    '🛋','📚','✈️','🚢','🏰','🌊','🏔','🌺','🦋','🐶',
-  ];
-
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Hidden file input for reward icon pickers */}
@@ -506,100 +496,22 @@ export function ManageTab({
                           <div className="relative shrink-0">
                             <button
                               type="button"
-                              onClick={() => { setUrlIconInput(''); setUrlIconError(''); setChoreIconPickerOpen(choreIconPickerOpen === t.id ? null : t.id); }}
+                              onClick={() => { setChoreIconPickerOpen(choreIconPickerOpen === t.id ? null : t.id); }}
                               className={`${btnBase} flex h-10 w-12 items-center justify-center rounded-xl border border-white bg-white hover:border-indigo-300`}
                               title="Pick icon"
                             >
                               {renderIcon(editChoreIcon || '📋', 'text-2xl')}
                             </button>
                             {choreIconPickerOpen === t.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setChoreIconPickerOpen(null)} />
-                                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-indigo-100 bg-white p-3 shadow-2xl">
-                                  {customIcons.length > 0 && (
-                                    <div className="mb-2">
-                                      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
-                                      <div className="flex flex-wrap gap-1">
-                                        {customIcons.map(url => (
-                                          <div key={url} className="group relative">
-                                            <button
-                                              type="button"
-                                              onClick={() => { setEditChoreIcon(url); setChoreIconPickerOpen(null); }}
-                                              className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50`}
-                                              title={url}
-                                            >
-                                              <img src={url} className="h-6 w-6 object-contain" alt="icon" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={ev => { ev.stopPropagation(); removeCustomIcon(url); }}
-                                              className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
-                                              title="Remove"
-                                            >×</button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                      <hr className="my-2 border-slate-100" />
-                                    </div>
-                                  )}
-                                  <div className="grid grid-cols-10 gap-0.5 mb-2">
-                                    {EMOJI_OPTIONS.map(em => (
-                                      <button
-                                        key={em}
-                                        type="button"
-                                        onClick={() => { setEditChoreIcon(em); setChoreIconPickerOpen(null); }}
-                                        className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-indigo-50`}
-                                      >{em}</button>
-                                    ))}
-                                  </div>
-                                  <div className="border-t border-slate-100 pt-2">
-                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
-                                    <div className="flex gap-1">
-                                      <input
-                                        type="url"
-                                        placeholder="https://..."
-                                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-indigo-400/30 focus:border-indigo-300 focus:ring-2"
-                                        value={urlIconInput}
-                                        onChange={ev => { setUrlIconInput(ev.target.value); setUrlIconError(''); }}
-                                        onClick={ev => ev.stopPropagation()}
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={ev => {
-                                          ev.stopPropagation();
-                                          const url = urlIconInput.trim();
-                                          if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
-                                          saveCustomIcon(url);
-                                          setEditChoreIcon(url);
-                                          setUrlIconInput('');
-                                          setChoreIconPickerOpen(null);
-                                        }}
-                                        className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-indigo-600 px-2 py-1 text-xs font-black text-white`}
-                                      >Use</button>
-                                    </div>
-                                    {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
-                                  </div>
-                                  <div className="border-t border-slate-100 pt-2">
-                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
-                                    <button
-                                      type="button"
-                                      onClick={ev => { ev.stopPropagation(); choreFileInputRef.current?.click(); }}
-                                      className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700`}
-                                    >
-                                      📁 Upload PNG / image file
-                                    </button>
-                                  </div>
-                                  <a
-                                    href="https://www.magnific.com/icons/copy-paste"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-2 flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700"
-                                    onClick={() => setChoreIconPickerOpen(null)}
-                                  >
-                                    🔍 Browse more icons at Magnific →
-                                  </a>
-                                </div>
-                              </>
+                              <IconPickerDropdown
+                                accentColor="indigo"
+                                customIcons={customIcons}
+                                onSelect={icon => setEditChoreIcon(icon)}
+                                onClose={() => setChoreIconPickerOpen(null)}
+                                removeCustomIcon={removeCustomIcon}
+                                saveCustomIcon={saveCustomIcon}
+                                fileInputRef={choreFileInputRef}
+                              />
                             )}
                           </div>
                           <input
@@ -771,100 +683,22 @@ export function ManageTab({
                 <div className="relative shrink-0">
                   <button
                     type="button"
-                    onClick={() => { setUrlIconInput(''); setUrlIconError(''); setChoreIconPickerOpen(choreIconPickerOpen === 'new' ? null : 'new'); }}
+                    onClick={() => { setChoreIconPickerOpen(choreIconPickerOpen === 'new' ? null : 'new'); }}
                     className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white hover:border-emerald-300`}
                     title="Pick icon"
                   >
                     {renderIcon(newChoreIcon || '📋', 'text-2xl')}
                   </button>
                   {choreIconPickerOpen === 'new' && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setChoreIconPickerOpen(null)} />
-                      <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-emerald-100 bg-white p-3 shadow-2xl">
-                        {customIcons.length > 0 && (
-                          <div className="mb-2">
-                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
-                            <div className="flex flex-wrap gap-1">
-                              {customIcons.map(url => (
-                                <div key={url} className="group relative">
-                                  <button
-                                    type="button"
-                                    onClick={() => { setNewChoreIcon(url); setChoreIconPickerOpen(null); }}
-                                    className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50`}
-                                    title={url}
-                                  >
-                                    <img src={url} className="h-6 w-6 object-contain" alt="icon" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={ev => { ev.stopPropagation(); removeCustomIcon(url); }}
-                                    className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
-                                    title="Remove"
-                                  >×</button>
-                                </div>
-                              ))}
-                            </div>
-                            <hr className="my-2 border-slate-100" />
-                          </div>
-                        )}
-                        <div className="grid grid-cols-10 gap-0.5 mb-2">
-                          {EMOJI_OPTIONS.map(em => (
-                            <button
-                              key={em}
-                              type="button"
-                              onClick={() => { setNewChoreIcon(em); setChoreIconPickerOpen(null); }}
-                              className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-emerald-50`}
-                            >{em}</button>
-                          ))}
-                        </div>
-                        <div className="border-t border-slate-100 pt-2">
-                          <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
-                          <div className="flex gap-1">
-                            <input
-                              type="url"
-                              placeholder="https://..."
-                              className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-emerald-400/30 focus:border-emerald-300 focus:ring-2"
-                              value={urlIconInput}
-                              onChange={ev => { setUrlIconInput(ev.target.value); setUrlIconError(''); }}
-                              onClick={ev => ev.stopPropagation()}
-                            />
-                            <button
-                              type="button"
-                              onClick={ev => {
-                                ev.stopPropagation();
-                                const url = urlIconInput.trim();
-                                if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
-                                saveCustomIcon(url);
-                                setNewChoreIcon(url);
-                                setUrlIconInput('');
-                                setChoreIconPickerOpen(null);
-                              }}
-                              className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-emerald-600 px-2 py-1 text-xs font-black text-white`}
-                            >Use</button>
-                          </div>
-                          {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
-                        </div>
-                        <div className="border-t border-slate-100 pt-2">
-                          <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
-                          <button
-                            type="button"
-                            onClick={ev => { ev.stopPropagation(); choreFileInputRef.current?.click(); }}
-                            className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700`}
-                          >
-                            📁 Upload PNG / image file
-                          </button>
-                        </div>
-                        <a
-                          href="https://www.magnific.com/icons/copy-paste"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700"
-                          onClick={() => setChoreIconPickerOpen(null)}
-                        >
-                          🔍 Browse more icons at Magnific →
-                        </a>
-                      </div>
-                    </>
+                    <IconPickerDropdown
+                      accentColor="emerald"
+                      customIcons={customIcons}
+                      onSelect={icon => setNewChoreIcon(icon)}
+                      onClose={() => setChoreIconPickerOpen(null)}
+                      removeCustomIcon={removeCustomIcon}
+                      saveCustomIcon={saveCustomIcon}
+                      fileInputRef={choreFileInputRef}
+                    />
                   )}
                 </div>
                 <input
@@ -1251,105 +1085,22 @@ export function ManageTab({
                           <div className="relative shrink-0">
                             <button
                               type="button"
-                              onClick={() => { setUrlIconInput(''); setUrlIconError(''); setEmojiPickerOpen(emojiPickerOpen === r.id ? null : r.id); }}
+                              onClick={() => { setEmojiPickerOpen(emojiPickerOpen === r.id ? null : r.id); }}
                               className={`${btnBase} flex h-9 w-9 items-center justify-center rounded-xl hover:bg-amber-100`}
                               title="Change icon"
                             >
                               {renderIcon(r.icon || '🎁')}
                             </button>
                             {emojiPickerOpen === r.id && (
-                              <>
-                                <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
-                                <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
-                                  {/* Custom URL icons row */}
-                                  {customIcons.length > 0 && (
-                                    <div className="mb-2">
-                                      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
-                                      <div className="flex flex-wrap gap-1">
-                                        {customIcons.map(url => (
-                                          <div key={url} className="group relative">
-                                            <button
-                                              type="button"
-                                              onClick={() => { onUpdateReward(r.id, { icon: url }); setEmojiPickerOpen(null); }}
-                                              className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50`}
-                                              title={url}
-                                            >
-                                              <img src={url} className="h-6 w-6 object-contain" alt="icon" />
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={e => { e.stopPropagation(); removeCustomIcon(url); }}
-                                              className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
-                                              title="Remove"
-                                            >×</button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                      <hr className="my-2 border-slate-100" />
-                                    </div>
-                                  )}
-                                  {/* Emoji grid */}
-                                  <div className="grid grid-cols-10 gap-0.5 mb-2">
-                                    {EMOJI_OPTIONS.map(e => (
-                                      <button
-                                        key={e}
-                                        type="button"
-                                        onClick={() => { onUpdateReward(r.id, { icon: e }); setEmojiPickerOpen(null); }}
-                                        className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-amber-50`}
-                                      >{e}</button>
-                                    ))}
-                                  </div>
-                                  {/* URL import section */}
-                                  <div className="border-t border-slate-100 pt-2">
-                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
-                                    <div className="flex gap-1">
-                                      <input
-                                        type="url"
-                                        placeholder="https://..."
-                                        className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-amber-400/30 focus:border-amber-300 focus:ring-2"
-                                        value={urlIconInput}
-                                        onChange={e => { setUrlIconInput(e.target.value); setUrlIconError(''); }}
-                                        onClick={e => e.stopPropagation()}
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={e => {
-                                          e.stopPropagation();
-                                          const url = urlIconInput.trim();
-                                          if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
-                                          saveCustomIcon(url);
-                                          onUpdateReward(r.id, { icon: url });
-                                          setUrlIconInput('');
-                                          setEmojiPickerOpen(null);
-                                        }}
-                                        className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-amber-500 px-2 py-1 text-xs font-black text-white`}
-                                      >Use</button>
-                                    </div>
-                                    {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
-                                  </div>
-                                  {/* Upload from file */}
-                                  <div className="border-t border-slate-100 pt-2">
-                                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
-                                    <button
-                                      type="button"
-                                      onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                                      className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700`}
-                                    >
-                                      📁 Upload PNG / image file
-                                    </button>
-                                  </div>
-                                  {/* Magnific link */}
-                                  <a
-                                    href="https://www.magnific.com/icons/copy-paste"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-2 flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
-                                    onClick={() => setEmojiPickerOpen(null)}
-                                  >
-                                    🔍 Browse more icons at Magnific →
-                                  </a>
-                                </div>
-                              </>
+                              <IconPickerDropdown
+                                accentColor="amber"
+                                customIcons={customIcons}
+                                onSelect={icon => onUpdateReward(r.id, { icon })}
+                                onClose={() => setEmojiPickerOpen(null)}
+                                removeCustomIcon={removeCustomIcon}
+                                saveCustomIcon={saveCustomIcon}
+                                fileInputRef={fileInputRef}
+                              />
                             )}
                           </div>
 
@@ -1451,105 +1202,22 @@ export function ManageTab({
                   <div className="relative shrink-0">
                     <button
                       type="button"
-                      onClick={() => { setUrlIconInput(''); setUrlIconError(''); setEmojiPickerOpen(emojiPickerOpen === 'new' ? null : 'new'); }}
+                      onClick={() => { setEmojiPickerOpen(emojiPickerOpen === 'new' ? null : 'new'); }}
                       className={`${btnBase} flex h-12 w-14 items-center justify-center rounded-xl border border-white bg-white hover:border-amber-300`}
                       title="Pick icon"
                     >
                       {renderIcon(newRewardIcon, 'text-2xl')}
                     </button>
                     {emojiPickerOpen === 'new' && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(null)} />
-                        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-amber-100 bg-white p-3 shadow-2xl">
-                          {/* Custom URL icons row */}
-                          {customIcons.length > 0 && (
-                            <div className="mb-2">
-                              <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Imported icons</p>
-                              <div className="flex flex-wrap gap-1">
-                                {customIcons.map(url => (
-                                  <div key={url} className="group relative">
-                                    <button
-                                      type="button"
-                                      onClick={() => { setNewRewardIcon(url); setEmojiPickerOpen(null); }}
-                                      className={`${btnBase} flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50`}
-                                      title={url}
-                                    >
-                                      <img src={url} className="h-6 w-6 object-contain" alt="icon" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={e => { e.stopPropagation(); removeCustomIcon(url); }}
-                                      className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] text-white group-hover:flex"
-                                      title="Remove"
-                                    >×</button>
-                                  </div>
-                                ))}
-                              </div>
-                              <hr className="my-2 border-slate-100" />
-                            </div>
-                          )}
-                          {/* Emoji grid */}
-                          <div className="grid grid-cols-10 gap-0.5 mb-2">
-                            {EMOJI_OPTIONS.map(e => (
-                              <button
-                                key={e}
-                                type="button"
-                                onClick={() => { setNewRewardIcon(e); setEmojiPickerOpen(null); }}
-                                className={`${btnBase} rounded-lg p-0.5 text-xl hover:bg-amber-50`}
-                              >{e}</button>
-                            ))}
-                          </div>
-                          {/* URL import section */}
-                          <div className="border-t border-slate-100 pt-2">
-                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Import icon from URL</p>
-                            <div className="flex gap-1">
-                              <input
-                                type="url"
-                                placeholder="https://..."
-                                className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none ring-amber-400/30 focus:border-amber-300 focus:ring-2"
-                                value={urlIconInput}
-                                onChange={e => { setUrlIconInput(e.target.value); setUrlIconError(''); }}
-                                onClick={e => e.stopPropagation()}
-                              />
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  const url = urlIconInput.trim();
-                                  if (!url.startsWith('http')) { setUrlIconError('Must start with http'); return; }
-                                  saveCustomIcon(url);
-                                  setNewRewardIcon(url);
-                                  setUrlIconInput('');
-                                  setEmojiPickerOpen(null);
-                                }}
-                                className={`${btnBase} ${btnPress} shrink-0 rounded-lg bg-amber-500 px-2 py-1 text-xs font-black text-white`}
-                              >Use</button>
-                            </div>
-                            {urlIconError && <p className="mt-1 text-[10px] text-red-500">{urlIconError}</p>}
-                          </div>
-                          {/* Upload from file */}
-                          <div className="border-t border-slate-100 pt-2">
-                            <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">Or upload an image file</p>
-                            <button
-                              type="button"
-                              onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                              className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700`}
-                            >
-                              📁 Upload PNG / image file
-                            </button>
-                          </div>
-                          {/* Magnific link */}
-                          <a
-                            href="https://www.magnific.com/icons/copy-paste"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-2 flex items-center gap-1 text-xs font-bold text-amber-600 hover:text-amber-700"
-                            onClick={() => setEmojiPickerOpen(null)}
-                          >
-                            🔍 Browse more icons at Magnific →
-                          </a>
-                        </div>
-                      </>
+                      <IconPickerDropdown
+                        accentColor="amber"
+                        customIcons={customIcons}
+                        onSelect={icon => setNewRewardIcon(icon)}
+                        onClose={() => setEmojiPickerOpen(null)}
+                        removeCustomIcon={removeCustomIcon}
+                        saveCustomIcon={saveCustomIcon}
+                        fileInputRef={fileInputRef}
+                      />
                     )}
                   </div>
                   <input

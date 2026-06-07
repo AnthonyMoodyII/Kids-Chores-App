@@ -17,7 +17,7 @@ export const DAYS = [
 ] as const;
 
 export const IMG_HOME = '/kids.jpg';
-export const IMG_KIDS = '/parents.jpg';
+const IMG_KIDS = '/parents.jpg';
 
 /** Format a points number with thousands separator: 1000 → "1,000" */
 export const fmtPts = (n: number): string => Math.round(n).toLocaleString();

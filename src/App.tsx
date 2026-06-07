@@ -498,6 +498,9 @@ export default function ChoreApp() {
               <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-bold text-violet-200">
                 <LogIn size={10} /> Login
               </span>
+              <span className="absolute top-2 left-2 rounded-full bg-black/30 px-1.5 py-0.5 text-[8px] font-bold text-violet-300/70 tabular-nums">
+                v{__APP_VERSION__}
+              </span>
             </a>
           </div>
         </header>

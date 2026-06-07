@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import postcssOklabFunction from '@csstools/postcss-oklab-function'
+import { readFileSync } from 'fs'
+
+const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 // Tailwind v4 stores "in oklab" colour-interpolation inside CSS custom property
 // values (e.g. --tw-gradient-position: to bottom right in oklab).
@@ -24,6 +27,9 @@ const stripGradientColorInterpolation = {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   plugins: [react(), tailwindcss()],
   css: {
     // Compatibility fixes so older/embedded browsers (Samsung fridge, LG TV,
