@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ExternalLink, ChevronDown, ChevronUp, Copy, Check, Trash2, Pencil, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Settings, ExternalLink, ChevronDown, ChevronUp, Copy, Check, Trash2, Pencil, ShieldCheck, ShieldOff } from 'lucide-react';
 import { API_URL, cardSurface, btnBase, btnPress } from '../lib/constants';
 
 interface OAuthSettings {
