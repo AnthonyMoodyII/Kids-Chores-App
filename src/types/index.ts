@@ -69,14 +69,6 @@ export interface CashPayment {
   timestamp: string;
 }
 
-/** Derived per-child stats computed from active chores. */
-interface KidStats {
-  active: Chore[];
-  approved: number;
-  pending: number;
-  canPayout: boolean;
-}
-
 // ── Rewards & Points ──────────────────────────────────────────────────────────
 
 export interface RewardTemplate {
