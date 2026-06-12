@@ -7,6 +7,7 @@ import { ChangePasswordForm } from './ChangePasswordForm';
 interface ParentLoginFormProps {
   onSuccess: (hasChanged: boolean) => void;
   oauthError?: string | null;
+  onClearOauthError?: () => void;
 }
 
 interface OAuthProvider {
@@ -48,7 +49,7 @@ function providerHoverClass(issuer: string) {
   return 'hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
 }
 
-export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps) {
+export function ParentLoginForm({ onSuccess, oauthError, onClearOauthError }: ParentLoginFormProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -67,6 +68,13 @@ export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps)
       .then((data: OAuthProvider[]) => setOauthProviders(data.filter(p => p.enabled)))
       .catch(() => {});
   }, []);
+
+  // Auto-dismiss OAuth error after 10 seconds
+  useEffect(() => {
+    if (!oauthError) return;
+    const t = setTimeout(() => onClearOauthError?.(), 10_000);
+    return () => clearTimeout(t);
+  }, [oauthError, onClearOauthError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,7 +188,7 @@ export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps)
               <button
                 key={p.id}
                 type="button"
-                onClick={() => { window.location.href = `/api/parent/oauth/login?provider=${p.id}`; }}
+                onClick={() => { onClearOauthError?.(); window.location.href = `/api/parent/oauth/login?provider=${p.id}`; }}
                 className={`${btnBase} ${btnPress} inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-3.5 font-black text-slate-700 shadow-sm ${providerHoverClass(p.issuer)}`}
               >
                 <ProviderIcon issuer={p.issuer} />

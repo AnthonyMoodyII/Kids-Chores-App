@@ -35,6 +35,7 @@ interface ParentViewProps {
   onOpenOAuthSettings: () => void;
   onCloseOAuthSettings: () => void;
   oauthError?: string | null;
+  onClearOauthError?: () => void;
   // data
   kids: User[];
   chores: Chore[];
@@ -95,6 +96,7 @@ export function ParentView({
   onOpenOAuthSettings: _onOpenOAuthSettings,
   onCloseOAuthSettings,
   oauthError,
+  onClearOauthError,
   kids,
   chores,
   setKids,
@@ -167,7 +169,7 @@ export function ParentView({
             ← Back to kids
           </button>
         </div>
-        <ParentLoginForm onSuccess={onLoginSuccess} oauthError={oauthError} />
+        <ParentLoginForm onSuccess={onLoginSuccess} oauthError={oauthError} onClearOauthError={onClearOauthError} />
       </div>
     );
   }

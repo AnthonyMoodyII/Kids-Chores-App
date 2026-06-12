@@ -534,6 +534,7 @@ export default function ChoreApp() {
             onOpenOAuthSettings={() => setShowOAuthSettings(true)}
             onCloseOAuthSettings={() => setShowOAuthSettings(false)}
             oauthError={oauthError}
+            onClearOauthError={() => setOauthError(null)}
             kids={kids}
             setKids={setKids}
             chores={chores}
