@@ -196,7 +196,7 @@ export function ParentLoginForm({ onSuccess, oauthError, onClearOauthError }: Pa
               <button
                 key={p.id}
                 type="button"
-                onClick={() => { onClearOauthError?.(); window.location.href = `/api/parent/oauth/login?provider=${p.id}`; }}
+                onClick={() => { onClearOauthError?.(); window.location.href = `/api/parent/oauth/login?provider=${p.id}${oauthError ? '&prompt=login' : ''}`; }}
                 className={`${btnBase} ${btnPress} inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-3.5 font-black text-slate-700 shadow-sm ${providerHoverClass(p.issuer)}`}
               >
                 <ProviderIcon issuer={p.issuer} />

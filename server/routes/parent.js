@@ -141,7 +141,7 @@ router.delete('/parent/oauth/providers/:id', requireParentPassword, async (req, 
 // ── OAuth Login / Callback ────────────────────────────────────────────────────
 
 router.get('/parent/oauth/login', async (req, res) => {
-  const { provider: providerId } = req.query;
+  const { provider: providerId, prompt } = req.query;
 
   let provider;
   if (providerId) {
@@ -165,6 +165,7 @@ router.get('/parent/oauth/login', async (req, res) => {
       response_type: 'code',
       scope: 'openid email profile',
       state,
+      ...(prompt ? { prompt: String(prompt) } : {}),
     });
     res.redirect(`${oidc.authorization_endpoint}?${params}`);
   } catch (err) {
