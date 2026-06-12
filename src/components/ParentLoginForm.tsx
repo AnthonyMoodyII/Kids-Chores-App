@@ -29,10 +29,18 @@ function GoogleIcon() {
 }
 
 function KeycloakIcon() {
+  // Keycloak brand mark: orange shield with bold white key
   return (
-    <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="24" cy="24" r="22" fill="#4D9DE0" />
-      <path fill="#fff" d="M24 10c-7.7 0-14 6.3-14 14s6.3 14 14 14 14-6.3 14-14-6.3-14-14-14zm0 4a10 10 0 010 20 10 10 0 010-20zm0 4a6 6 0 100 12 6 6 0 000-12z"/>
+    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      {/* Shield */}
+      <path fill="#E04B20" d="M10 1.2 L17.5 4.2 L17.5 10 C17.5 14.5 14.2 18.2 10 19.2 C5.8 18.2 2.5 14.5 2.5 10 L2.5 4.2 Z" />
+      {/* Key bow */}
+      <circle cx="10" cy="8.5" r="3" fill="none" stroke="#fff" strokeWidth="2" />
+      {/* Key shaft */}
+      <rect x="9.1" y="11.3" width="1.8" height="4.8" rx="0.5" fill="#fff" />
+      {/* Key teeth */}
+      <rect x="10.9" y="12.6" width="1.8" height="1.3" rx="0.4" fill="#fff" />
+      <rect x="10.9" y="14.4" width="1.4" height="1.2" rx="0.4" fill="#fff" />
     </svg>
   );
 }
