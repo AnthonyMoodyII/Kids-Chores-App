@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogIn } from 'lucide-react';
+import { LogIn, KeyRound } from 'lucide-react';
 import { API_URL, DEFAULT_PARENT_USERNAME, DEFAULT_PARENT_PASSWORD, cardSurface, btnBase, btnPress } from '../lib/constants';
 import { writeParentSession } from '../lib/session';
 import { ChangePasswordForm } from './ChangePasswordForm';
@@ -7,6 +7,13 @@ import { ChangePasswordForm } from './ChangePasswordForm';
 interface ParentLoginFormProps {
   onSuccess: (hasChanged: boolean) => void;
   oauthError?: string | null;
+}
+
+interface OAuthProvider {
+  id: string;
+  name: string;
+  issuer: string;
+  enabled: boolean;
 }
 
 function GoogleIcon() {
@@ -20,19 +27,45 @@ function GoogleIcon() {
   );
 }
 
+function KeycloakIcon() {
+  return (
+    <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="24" cy="24" r="22" fill="#4D9DE0" />
+      <path fill="#fff" d="M24 10c-7.7 0-14 6.3-14 14s6.3 14 14 14 14-6.3 14-14-6.3-14-14-14zm0 4a10 10 0 010 20 10 10 0 010-20zm0 4a6 6 0 100 12 6 6 0 000-12z"/>
+    </svg>
+  );
+}
+
+function ProviderIcon({ issuer }: { issuer: string }) {
+  if (issuer.includes('accounts.google.com')) return <GoogleIcon />;
+  if (issuer.includes('keycloak')) return <KeycloakIcon />;
+  return <KeyRound size={20} className="text-violet-500" />;
+}
+
+function providerHoverClass(issuer: string) {
+  if (issuer.includes('accounts.google.com')) return 'hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700';
+  if (issuer.includes('keycloak')) return 'hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700';
+  return 'hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700';
+}
+
 export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [hasChanged, setHasChanged] = useState<boolean | null>(null);
   const [showEmergencyReset, setShowEmergencyReset] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
 
-  // Check whether the default password has been changed yet
   useEffect(() => {
     fetch(`${API_URL}/api/parent/status`)
       .then(r => r.json())
       .then(d => setHasChanged(d.hasChanged ?? false))
       .catch(() => setHasChanged(false));
+
+    fetch(`${API_URL}/api/parent/oauth/providers`)
+      .then(r => r.json())
+      .then((data: OAuthProvider[]) => setOauthProviders(data.filter(p => p.enabled)))
+      .catch(() => {});
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,7 +89,6 @@ export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps)
     }
   };
 
-  // Show emergency reset form instead of login form
   if (showEmergencyReset) {
     return (
       <ChangePasswordForm
@@ -126,32 +158,47 @@ export function ParentLoginForm({ onSuccess, oauthError }: ParentLoginFormProps)
         </button>
       </form>
 
-      {/* OR divider */}
-      <div className="my-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-slate-200" />
-        <span className="text-xs font-black uppercase tracking-widest text-slate-400">or</span>
-        <div className="h-px flex-1 bg-slate-200" />
-      </div>
+      {oauthProviders.length > 0 && (
+        <>
+          {/* OR divider */}
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-black uppercase tracking-widest text-slate-400">or</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
 
-      {/* OAuth error message */}
-      {oauthError ? (
-        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+          {/* OAuth error message */}
+          {oauthError ? (
+            <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+              {oauthError}
+            </p>
+          ) : null}
+
+          {/* One button per enabled provider */}
+          <div className="space-y-3">
+            {oauthProviders.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { window.location.href = `/api/parent/oauth/login?provider=${p.id}`; }}
+                className={`${btnBase} ${btnPress} inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-3.5 font-black text-slate-700 shadow-sm ${providerHoverClass(p.issuer)}`}
+              >
+                <ProviderIcon issuer={p.issuer} />
+                Log in with {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Show OAuth error even when no providers are configured */}
+      {oauthProviders.length === 0 && oauthError && (
+        <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
           {oauthError}
         </p>
-      ) : null}
-
-      {/* Google sign-in */}
-      <button
-        type="button"
-        onClick={() => { window.location.href = '/api/parent/oauth/login'; }}
-        className={`${btnBase} ${btnPress} inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white py-3.5 font-black text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700`}
-      >
-        <GoogleIcon />
-        Log in with Google
-      </button>
+      )}
 
       <div className="mt-6 space-y-2 text-center">
-        {/* Only show default credentials hint before password has been changed */}
         {hasChanged === false && (
           <p className="text-xs text-slate-400">
             Default credentials: username{' '}

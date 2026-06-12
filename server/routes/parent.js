@@ -6,26 +6,29 @@ const requireParentPassword = require('../middleware/requireParentPassword');
 
 const router = Router();
 
-// ── OIDC OAuth cache + state ──────────────────────────────────────────────────
+// ── OIDC discovery cache (per issuer) ────────────────────────────────────────
 
-let _oidcCache = null, _oidcCacheExpiry = 0;
+const _oidcCaches = new Map(); // issuer → { data, expiresAt }
 
 async function discoverOidc(issuer) {
-  if (_oidcCache && Date.now() < _oidcCacheExpiry) return _oidcCache;
+  const cached = _oidcCaches.get(issuer);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
   const url = issuer.includes('openid-configuration')
     ? issuer
     : `${issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
-  _oidcCache = await res.json();
-  _oidcCacheExpiry = Date.now() + 3600_000;
-  return _oidcCache;
+  const data = await res.json();
+  _oidcCaches.set(issuer, { data, expiresAt: Date.now() + 3600_000 });
+  return data;
 }
 
-const _oauthStates = new Map();
+// ── OAuth state (carries providerId) ─────────────────────────────────────────
+
+const _oauthStates = new Map(); // state → { expiresAt, providerId }
 setInterval(() => {
   const now = Date.now();
-  for (const [k, v] of _oauthStates) if (v < now) _oauthStates.delete(k);
+  for (const [k, v] of _oauthStates) if (v.expiresAt < now) _oauthStates.delete(k);
 }, 600_000);
 
 function getAppUrl(req) {
@@ -33,6 +36,10 @@ function getAppUrl(req) {
   if (cfg) return cfg.replace(/\/$/, '');
   const proto = req.headers['x-forwarded-proto'] || 'http';
   return `${proto}://${req.headers['host'] || 'localhost:8080'}`;
+}
+
+function maskProvider(p) {
+  return { id: p.id, name: p.name, issuer: p.issuer, clientId: p.clientId, enabled: p.enabled, sortOrder: p.sortOrder, clientSecretSet: !!p.clientSecret };
 }
 
 // ── Status & Auth ─────────────────────────────────────────────────────────────
@@ -89,20 +96,71 @@ router.post('/parent/reset', async (req, res) => {
   res.json({ success: true });
 });
 
-// ── OAuth ─────────────────────────────────────────────────────────────────────
+// ── OAuth Providers (CRUD) ────────────────────────────────────────────────────
+
+router.get('/parent/oauth/providers', async (req, res) => {
+  const providers = await prisma.oAuthProvider.findMany({ orderBy: { sortOrder: 'asc' } });
+  res.json(providers.map(maskProvider));
+});
+
+router.post('/parent/oauth/providers', requireParentPassword, async (req, res) => {
+  const { name, issuer, clientId, clientSecret } = req.body;
+  if (!name?.trim() || !issuer?.trim() || !clientId?.trim() || !clientSecret?.trim()) {
+    return res.status(400).json({ error: 'name, issuer, clientId, and clientSecret are all required.' });
+  }
+  const count = await prisma.oAuthProvider.count();
+  const provider = await prisma.oAuthProvider.create({
+    data: { name: name.trim(), issuer: issuer.trim().replace(/\/$/, ''), clientId: clientId.trim(), clientSecret: clientSecret.trim(), sortOrder: count },
+  });
+  res.json(maskProvider(provider));
+});
+
+router.put('/parent/oauth/providers/:id', requireParentPassword, async (req, res) => {
+  const { id } = req.params;
+  const { name, issuer, clientId, clientSecret, enabled } = req.body;
+  const existing = await prisma.oAuthProvider.findUnique({ where: { id } });
+  if (!existing) return res.status(404).json({ error: 'Provider not found.' });
+  const data = {};
+  if (name !== undefined) data.name = name.trim();
+  if (issuer !== undefined) data.issuer = issuer.trim().replace(/\/$/, '');
+  if (clientId !== undefined) data.clientId = clientId.trim();
+  if (clientSecret?.trim()) data.clientSecret = clientSecret.trim();
+  if (enabled !== undefined) data.enabled = Boolean(enabled);
+  const updated = await prisma.oAuthProvider.update({ where: { id }, data });
+  // Bust the OIDC discovery cache for this issuer
+  _oidcCaches.delete(existing.issuer);
+  res.json(maskProvider(updated));
+});
+
+router.delete('/parent/oauth/providers/:id', requireParentPassword, async (req, res) => {
+  const { id } = req.params;
+  await prisma.oAuthProvider.delete({ where: { id } });
+  res.json({ ok: true });
+});
+
+// ── OAuth Login / Callback ────────────────────────────────────────────────────
 
 router.get('/parent/oauth/login', async (req, res) => {
-  const parent = await prisma.parent.findFirst();
-  const issuer = parent?.oauthIssuer, clientId = parent?.oauthClientId;
-  if (!issuer || !clientId) {
-    return res.redirect(`${getAppUrl(req)}/?oauth_error=${encodeURIComponent('OAuth is not configured. Set it up in the parent portal.')}`);
+  const { provider: providerId } = req.query;
+
+  let provider;
+  if (providerId) {
+    provider = await prisma.oAuthProvider.findUnique({ where: { id: String(providerId) } });
+  } else {
+    // Fall back to first enabled provider
+    provider = await prisma.oAuthProvider.findFirst({ where: { enabled: true }, orderBy: { sortOrder: 'asc' } });
   }
+
+  if (!provider || !provider.enabled) {
+    return res.redirect(`${getAppUrl(req)}/?oauth_error=${encodeURIComponent('OAuth provider not configured or disabled.')}`);
+  }
+
   try {
-    const oidc = await discoverOidc(issuer);
+    const oidc = await discoverOidc(provider.issuer);
     const state = crypto.randomBytes(32).toString('hex');
-    _oauthStates.set(state, Date.now() + 600_000);
+    _oauthStates.set(state, { expiresAt: Date.now() + 600_000, providerId: provider.id });
     const params = new URLSearchParams({
-      client_id: clientId,
+      client_id: provider.clientId,
       redirect_uri: `${getAppUrl(req)}/api/parent/oauth/callback`,
       response_type: 'code',
       scope: 'openid email profile',
@@ -119,26 +177,30 @@ router.get('/parent/oauth/callback', async (req, res) => {
   const appUrl = getAppUrl(req);
   const { code, state, error } = req.query;
   if (error) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`OAuth error: ${error}`)}`);
-  if (!code || !state || !_oauthStates.has(state)) {
+
+  const stateEntry = _oauthStates.get(state);
+  if (!code || !state || !stateEntry) {
     return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('Invalid or expired OAuth state.')}`);
   }
   _oauthStates.delete(state);
-  const parent = await prisma.parent.findFirst();
-  const { oauthIssuer: issuer, oauthClientId: clientId, oauthClientSecret: clientSecret } = parent || {};
-  if (!issuer || !clientId || !clientSecret) {
-    return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth not configured.')}`);
+
+  const provider = await prisma.oAuthProvider.findUnique({ where: { id: stateEntry.providerId } });
+  if (!provider) {
+    return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth provider no longer exists.')}`);
   }
+
   try {
-    const oidc = await discoverOidc(issuer);
+    const oidc = await discoverOidc(provider.issuer);
     const redirectUri = `${appUrl}/api/parent/oauth/callback`;
     const tokenRes = await fetch(oidc.token_endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret }),
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: provider.clientId, client_secret: provider.clientSecret }),
       signal: AbortSignal.timeout(10000),
     });
     if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status}`);
     const tokens = await tokenRes.json();
+
     let email = null;
     if (tokens.id_token) {
       const p = JSON.parse(Buffer.from(tokens.id_token.split('.')[1], 'base64url').toString());
@@ -149,7 +211,9 @@ router.get('/parent/oauth/callback', async (req, res) => {
       if (ui.ok) email = (await ui.json()).email;
     }
     if (!email) return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent('OAuth provider did not return an email.')}`);
-    const allowed = (parent.allowedEmails || []).map(e => e.toLowerCase());
+
+    const parent = await prisma.parent.findFirst();
+    const allowed = (parent?.allowedEmails || []).map(e => e.toLowerCase());
     if (!allowed.includes(email.toLowerCase())) {
       return res.redirect(`${appUrl}/?oauth_error=${encodeURIComponent(`${email} is not authorized as a parent.`)}`);
     }
@@ -160,32 +224,19 @@ router.get('/parent/oauth/callback', async (req, res) => {
   }
 });
 
-router.get('/parent/oauth/settings', async (req, res) => {
-  const parent = await prisma.parent.findFirst();
-  res.json({
-    oauthIssuer: parent?.oauthIssuer || '',
-    oauthClientId: parent?.oauthClientId || '',
-    oauthClientSecretSet: !!(parent?.oauthClientSecret),
-    allowedEmails: parent?.allowedEmails || [],
-  });
-});
+// ── Legacy single-provider settings (kept for backward compatibility) ─────────
+// These map old GET/POST /parent/oauth/settings to the new provider model.
+// The frontend no longer calls these; they exist only for any external scripts.
 
-router.post('/parent/oauth/settings', requireParentPassword, async (req, res) => {
-  const { oauthIssuer, oauthClientId, oauthClientSecret, clearCredentials } = req.body;
-  const parent = req.parent;
-  const data = {};
-  if (clearCredentials) {
-    data.oauthIssuer = null;
-    data.oauthClientId = null;
-    data.oauthClientSecret = null;
-  } else {
-    if (oauthIssuer !== undefined) data.oauthIssuer = oauthIssuer.trim() || null;
-    if (oauthClientId !== undefined) data.oauthClientId = oauthClientId.trim() || null;
-    if ('oauthClientSecret' in req.body) data.oauthClientSecret = oauthClientSecret?.trim() || null;
-  }
-  await prisma.parent.update({ where: { id: parent.id }, data });
-  _oidcCache = null;
-  res.json({ success: true });
+router.get('/parent/oauth/settings', async (req, res) => {
+  const providers = await prisma.oAuthProvider.findMany({ orderBy: { sortOrder: 'asc' } });
+  const first = providers[0];
+  res.json({
+    oauthIssuer: first?.issuer || '',
+    oauthClientId: first?.clientId || '',
+    oauthClientSecretSet: !!first?.clientSecret,
+    allowedEmails: (await prisma.parent.findFirst())?.allowedEmails || [],
+  });
 });
 
 // ── Allowed emails ────────────────────────────────────────────────────────────

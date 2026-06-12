@@ -47,8 +47,27 @@ async function seedRewards() {
   }
 }
 
+async function migrateOAuthToProviders() {
+  const parent = await prisma.parent.findFirst();
+  if (!parent?.oauthIssuer || !parent?.oauthClientId || !parent?.oauthClientSecret) return;
+  const count = await prisma.oAuthProvider.count();
+  if (count > 0) return; // already migrated
+  await prisma.oAuthProvider.create({
+    data: {
+      name: 'Google',
+      issuer: parent.oauthIssuer.replace(/\/$/, ''),
+      clientId: parent.oauthClientId,
+      clientSecret: parent.oauthClientSecret,
+      enabled: true,
+      sortOrder: 0,
+    },
+  });
+  console.log('[oauth] Migrated legacy Google OAuth credentials to OAuthProvider table');
+}
+
 initParent().catch(console.error);
 seedRewards().catch(console.error);
+migrateOAuthToProviders().catch(console.error);
 
 // ── Routes (all mounted at /api) ──────────────────────────────────────────────
 

@@ -58,6 +58,17 @@ model Parent {
   oauthClientSecret String?
 }
 
+model OAuthProvider {
+  id           String   @id @default(uuid())
+  name         String
+  issuer       String
+  clientId     String
+  clientSecret String
+  enabled      Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
 model CashPayment {
   id        String   @id @default(uuid())
   childId   String
