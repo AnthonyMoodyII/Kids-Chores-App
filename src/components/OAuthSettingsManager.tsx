@@ -436,19 +436,14 @@ export function OAuthSettingsManager({ onRequestClose, inline = false }: OAuthSe
   }, []);
 
   const handleToggleEnabled = async (p: OAuthProvider) => {
-    // Optimistic update
     setProviders(prev => prev.map(x => x.id === p.id ? { ...x, enabled: !x.enabled } : x));
     try {
       const res = await fetch(`${API_URL}/api/parent/oauth/providers/${p.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        // Toggle doesn't require password — only credential changes do
-        // But the middleware requires it, so we skip password here — the server
-        // will reject without it. We'll show a note instead.
-        body: JSON.stringify({ enabled: !p.enabled, currentPassword: '' }),
+        body: JSON.stringify({ enabled: !p.enabled }),
       });
       if (!res.ok) {
-        // Revert on failure
         setProviders(prev => prev.map(x => x.id === p.id ? { ...x, enabled: p.enabled } : x));
       }
     } catch {

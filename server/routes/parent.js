@@ -132,6 +132,16 @@ router.put('/parent/oauth/providers/:id', requireParentPassword, async (req, res
   res.json(maskProvider(updated));
 });
 
+router.patch('/parent/oauth/providers/:id', async (req, res) => {
+  const { id } = req.params;
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) is required.' });
+  const existing = await prisma.oAuthProvider.findUnique({ where: { id } });
+  if (!existing) return res.status(404).json({ error: 'Provider not found.' });
+  const updated = await prisma.oAuthProvider.update({ where: { id }, data: { enabled } });
+  res.json(maskProvider(updated));
+});
+
 router.delete('/parent/oauth/providers/:id', requireParentPassword, async (req, res) => {
   const { id } = req.params;
   await prisma.oAuthProvider.delete({ where: { id } });
