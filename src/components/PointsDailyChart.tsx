@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Chore, DailyChoreSelection, DayOfWeek } from '../types';
 import { btnBase, fmtPts } from '../lib/constants';
 
@@ -49,7 +50,23 @@ export function PointsDailyChart({
 
   const weekTotal = totalPts.reduce((a, b) => a + b, 0);
   const BAR_MAX_H = 96;
+  const LABEL_OFFSET = 24; // h-5 label row (20px) + mb-1 (4px)
   const interactive = !!onSelectDay;
+  const gradientId = useId();
+
+  // Trend line — one point per day, normalized to the bar area (0,0 top-left .. 100,100 bottom-right)
+  const daysWithPts = totalPts.filter(p => p > 0).length;
+  const avgPts = daysWithPts > 0 ? weekTotal / 7 : 0;
+  const avgYPct = 100 - Math.min(100, (avgPts / maxPts) * 100);
+  const trendPoints = totalPts
+    .map((pts, i) => {
+      const x = ((i + 0.5) / 7) * 100;
+      const y = 100 - Math.min(100, (pts / maxPts) * 100);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  const peakIdx = totalPts.indexOf(maxPts);
+  const hasAnyPts = weekTotal > 0;
 
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
@@ -75,7 +92,52 @@ export function PointsDailyChart({
       </div>
 
       {/* Bar chart */}
-      <div className="flex items-end gap-1.5" style={{ height: `${BAR_MAX_H + 36}px` }}>
+      <div className="relative flex items-end gap-1.5" style={{ height: `${BAR_MAX_H + 36}px` }}>
+        {/* Trend line overlay — average reference + connecting line across the week */}
+        {hasAnyPts && (
+          <svg
+            className="pointer-events-none absolute inset-x-0 z-10"
+            style={{ top: `${LABEL_OFFSET}px`, height: `${BAR_MAX_H}px`, left: 0, right: 0, width: '100%' }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#a78bfa" />
+                <stop offset="100%" stopColor="#f59e0b" />
+              </linearGradient>
+            </defs>
+            <line
+              x1="0" y1={avgYPct} x2="100" y2={avgYPct}
+              stroke="#cbd5e1" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke"
+            />
+            <polyline
+              points={trendPoints}
+              fill="none"
+              stroke={`url(#${gradientId})`}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              opacity="0.85"
+            />
+            {totalPts.map((pts, i) => {
+              if (pts === 0) return null;
+              const x = ((i + 0.5) / 7) * 100;
+              const y = 100 - Math.min(100, (pts / maxPts) * 100);
+              return (
+                <circle
+                  key={i}
+                  cx={x} cy={y} r="2.2"
+                  fill={i === selectedIdx ? '#7c3aed' : i === todayIdx ? '#f59e0b' : '#ffffff'}
+                  stroke="#a78bfa"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+        )}
         {DAYS_ORDER.map((day, i) => {
           const mPts  = mandatoryPts[i];
           const oPts  = optionalPts[i];
@@ -100,13 +162,18 @@ export function PointsDailyChart({
               title={interactive ? (isSelected ? 'Show all week' : `View ${day}`) : undefined}
             >
               {/* Point label */}
-              <div className="mb-1 h-5 flex items-end justify-center">
+              <div className="mb-1 flex h-5 items-end justify-center gap-0.5">
                 {hasPts && (
-                  <span className={`text-[10px] font-black leading-none transition-colors ${
-                    isSelected ? 'text-violet-700' : isToday ? 'text-amber-700' : 'text-slate-500'
-                  }`}>
-                    {fmtPts(total)}
-                  </span>
+                  <>
+                    {i === peakIdx && totalPts.filter(p => p === maxPts).length === 1 && (
+                      <span className="text-[10px] leading-none">🔥</span>
+                    )}
+                    <span className={`text-[10px] font-black leading-none transition-colors ${
+                      isSelected ? 'text-violet-700' : isToday ? 'text-amber-700' : 'text-slate-500'
+                    }`}>
+                      {fmtPts(total)}
+                    </span>
+                  </>
                 )}
               </div>
 
@@ -188,6 +255,11 @@ export function PointsDailyChart({
         {dailySelections.some(s => s.completions > 0) && (
           <span className="flex items-center gap-1">
             <span className="inline-block h-2 w-3 rounded-sm bg-emerald-400" /> Bonus picks
+          </span>
+        )}
+        {hasAnyPts && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-0.5 w-3 rounded-sm bg-gradient-to-r from-violet-400 to-amber-400" /> Trend
           </span>
         )}
         {interactive && (
