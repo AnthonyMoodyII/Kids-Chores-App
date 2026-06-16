@@ -15,9 +15,34 @@ import { ParentView } from './views/ParentView';
 
 type AppView = 'child' | 'parent';
 
+function HomeSkeleton() {
+  return (
+    <div className="mx-auto max-w-6xl animate-pulse space-y-6" aria-hidden="true">
+      <div className="mb-4 flex gap-2">
+        <div className="h-10 w-28 rounded-full bg-slate-200" />
+        <div className="h-10 w-28 rounded-full bg-slate-100" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="h-48 rounded-[1.75rem] bg-slate-100 lg:col-span-1" />
+        <div className="h-48 rounded-[1.75rem] bg-slate-100 lg:col-span-3" />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="h-72 rounded-[1.75rem] bg-slate-100" />
+        <div className="h-72 rounded-[1.75rem] bg-slate-100" />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="h-40 rounded-3xl bg-slate-100" />
+        <div className="h-40 rounded-3xl bg-slate-100" />
+        <div className="h-40 rounded-3xl bg-slate-100" />
+      </div>
+    </div>
+  );
+}
+
 export default function ChoreApp() {
   // ── Global app state ──────────────────────────────────────────────────────
   const [kids, setKids] = useState<User[]>([]);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [view, setView] = useState<AppView>('child');
   const [parentAuthed, setParentAuthed] = useState(readParentSession);
   const [parentTab, setParentTab] = useState<'dashboard' | 'manage' | 'settings'>('dashboard');
@@ -195,6 +220,8 @@ export default function ChoreApp() {
         if (rewardReqsRes.ok) setRewardRequests(await rewardReqsRes.json());
       } catch (error) {
         console.error('Failed to load from backend API', error);
+      } finally {
+        setInitialLoading(false);
       }
     };
 
@@ -518,7 +545,9 @@ export default function ChoreApp() {
         </nav>
 
         {/* ── Views ── */}
-        {view === 'parent' ? (
+        {initialLoading ? (
+          <HomeSkeleton />
+        ) : view === 'parent' ? (
           <ParentView
             parentAuthed={parentAuthed}
             showChangePassword={showChangePassword}

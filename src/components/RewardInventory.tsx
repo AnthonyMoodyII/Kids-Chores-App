@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Clock, Send } from 'lucide-react';
+import { Package, Clock, Send, Gift, Star } from 'lucide-react';
 import type { RewardRedemption } from '../types';
 import { btnBase, btnPress, cardSurface } from '../lib/constants';
 
@@ -53,17 +53,19 @@ export function RewardInventory({ childId, redemptions, onRequestUse }: RewardIn
                   : 'border-violet-200 bg-violet-50'
               }`}
             >
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-2xl shadow-sm ${
-                isPending ? 'bg-amber-100' : 'bg-white'
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-sm ${
+                isPending ? 'bg-amber-100 text-amber-600' : 'bg-white text-violet-500'
               }`}>
-                🎁
+                <Gift size={20} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="font-black text-slate-800">{r.rewardTitle}</p>
                 <p className="text-xs text-slate-500">
                   Bought {new Date(r.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   {' · '}
-                  <span className="font-bold text-violet-600">⭐ {r.pointCost} pts</span>
+                  <span className="inline-flex items-center gap-1 font-bold text-violet-600">
+                    <Star size={11} fill="currentColor" /> {r.pointCost} pts
+                  </span>
                   {isPending && (
                     <span className="ml-2 font-bold text-amber-600">· Waiting for parent approval</span>
                   )}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Gift, X } from 'lucide-react';
+import { Gift, X, Star, CheckCircle2 } from 'lucide-react';
 import type { RewardTemplate } from '../types';
 import { btnBase, btnPress, fmtPts } from '../lib/constants';
 
@@ -42,7 +42,7 @@ export function RedeemRewardPanel({
     setError('');
     try {
       await onRedeem(selected);
-      setSuccess(`✅ Redeemed "${selectedReward?.title}"!`);
+      setSuccess(`Redeemed "${selectedReward?.title}"!`);
       setSelected(null);
       setTimeout(onClose, 1500);
     } catch (err: unknown) {
@@ -58,21 +58,24 @@ export function RedeemRewardPanel({
         <div className="flex items-center gap-2">
           <Gift size={20} className="text-amber-600" />
           <p className="font-black text-amber-900">Redeem for {kidName}</p>
-          <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-black text-amber-800">
-            ⭐ {fmtPts(balance)} pts
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-black text-amber-800">
+            <Star size={11} fill="currentColor" /> {fmtPts(balance)} pts
           </span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className={`${btnBase} rounded-xl p-1.5 text-slate-400 hover:text-slate-600`}
+          aria-label="Close"
+          className={`${btnBase} flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 hover:text-slate-600`}
         >
           <X size={18} />
         </button>
       </div>
 
       {success ? (
-        <p className="py-4 text-center font-bold text-emerald-600">{success}</p>
+        <p className="flex items-center justify-center gap-2 py-4 text-center font-bold text-emerald-600">
+          <CheckCircle2 size={18} /> {success}
+        </p>
       ) : (
         <>
           <div className="mb-4 grid gap-2 sm:grid-cols-2">

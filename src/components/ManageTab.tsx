@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { Users, Plus, Trash2, ListChecks, UserPlus, AlertCircle, Check, X, CheckSquare, Gift, ChevronDown, ChevronUp, Pencil, Waves, Repeat, Lock } from 'lucide-react';
 import type { User, Chore, ChoreTemplate, RewardTemplate } from '../types';
 import { API_URL, btnBase, btnPress, cardSurface } from '../lib/constants';
 import { IconPickerDropdown } from './IconPickerDropdown';
@@ -487,8 +487,8 @@ export function ManageTab({
                       className="col-span-full rounded-2xl border-2 border-indigo-300 bg-indigo-50 p-4 sm:col-span-2"
                       onClick={e => e.stopPropagation()}
                     >
-                      <p className="mb-3 text-xs font-black uppercase tracking-wider text-indigo-600">
-                        ✏️ Editing: {t.title}
+                      <p className="mb-3 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-indigo-600">
+                        <Pencil size={12} /> Editing: {t.title}
                       </p>
                       <div className="space-y-3">
                         <div className="flex gap-2">
@@ -557,16 +557,16 @@ export function ManageTab({
                             checked={editIsInPool}
                             onChange={e => setEditIsInPool(e.target.checked)}
                           />
-                          <span className="text-sm font-black text-slate-700">🏊 Show in optional pool</span>
+                          <span className="flex items-center gap-1.5 text-sm font-black text-slate-700"><Waves size={14} className="text-teal-500" /> Show in optional pool</span>
                         </label>
                         <div className="flex gap-2 pt-1">
                           <button
                             type="button"
                             disabled={editSaving || !editTitle.trim()}
                             onClick={() => handleSaveTemplate(t.id)}
-                            className={`${btnBase} ${btnPress} rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-indigo-500/25 disabled:pointer-events-none disabled:opacity-50`}
+                            className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-indigo-500/25 disabled:pointer-events-none disabled:opacity-50`}
                           >
-                            {editSaving ? 'Saving…' : '✓ Save'}
+                            {editSaving ? 'Saving…' : <><Check size={14} /> Save</>}
                           </button>
                           <button
                             type="button"
@@ -618,17 +618,17 @@ export function ManageTab({
                           ${t.baseValue.toFixed(2)} / week
                         </p>
                         {(t.maxPerDay ?? 1) > 1 && (
-                          <span className="inline-flex items-center rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-600">
-                            🔁 ×{t.maxPerDay}/day
+                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-600">
+                            <Repeat size={9} /> ×{t.maxPerDay}/day
                           </span>
                         )}
                         {t.isInPool === false ? (
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
-                            🔒 Private
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
+                            <Lock size={9} /> Private
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-black text-teal-600">
-                            🏊 Pool
+                          <span className="inline-flex items-center gap-1 rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-black text-teal-600">
+                            <Waves size={9} /> Pool
                           </span>
                         )}
                       </div>
@@ -727,7 +727,7 @@ export function ManageTab({
                   checked={newTemplateIsInPool}
                   onChange={e => setNewTemplateIsInPool(e.target.checked)}
                 />
-                <span className="text-sm font-black text-slate-700">🏊 Show in optional pool</span>
+                <span className="flex items-center gap-1.5 text-sm font-black text-slate-700"><Waves size={14} className="text-teal-500" /> Show in optional pool</span>
               </label>
               <div className="flex items-center gap-2">
                 <label className="text-xs font-black uppercase tracking-wide text-slate-500">Max per day</label>
@@ -860,7 +860,7 @@ export function ManageTab({
                             allAssigned ? 'text-emerald-600' : someAssigned ? 'text-amber-600' : 'text-slate-400'
                           }`}>
                             {allAssigned
-                              ? '✓ All selected chores already assigned'
+                              ? 'All selected chores already assigned'
                               : someAssigned
                               ? `${aCount} of ${selectedTemplates.length} chores already assigned`
                               : 'None of the selected chores assigned yet'}

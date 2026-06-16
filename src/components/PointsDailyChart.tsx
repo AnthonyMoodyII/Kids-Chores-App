@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { Flame, TrendingUp } from 'lucide-react';
 import type { Chore, DailyChoreSelection, DayOfWeek } from '../types';
 import { btnBase, fmtPts } from '../lib/constants';
 
@@ -69,21 +70,46 @@ export function PointsDailyChart({
   const hasAnyPts = weekTotal > 0;
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
+    <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-gradient-to-br from-violet-50/60 via-slate-50/60 to-amber-50/40 p-5">
+      {/* Accessible data-table fallback for screen readers — chart above is visual-only */}
+      <table className="sr-only">
+        <caption>Points earned per day this week</caption>
+        <thead>
+          <tr><th scope="col">Day</th><th scope="col">Mandatory points</th><th scope="col">Bonus points</th><th scope="col">Total points</th></tr>
+        </thead>
+        <tbody>
+          {DAYS_ORDER.map((day, i) => (
+            <tr key={day}>
+              <th scope="row">{day}</th>
+              <td>{mandatoryPts[i]}</td>
+              <td>{optionalPts[i]}</td>
+              <td>{totalPts[i]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Decorative glow, matches Leaderboard's premium treatment */}
+      <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-amber-200/20 blur-2xl" />
+      <div className="pointer-events-none absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-violet-200/20 blur-2xl" />
+
       {/* Header row */}
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-slate-400">
-          ⭐ Points this week
+      <div className="relative mb-4 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-xs font-bold text-slate-500">
+          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm shadow-violet-500/30">
+            <TrendingUp size={12} strokeWidth={2.5} />
+          </span>
+          Points this week
         </p>
         <div className="flex items-center gap-2">
-          <p className="text-xs font-bold text-slate-400">
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">
             {weekTotal.toLocaleString()} pts total
-          </p>
+          </span>
           {selectedDay && onSelectDay && (
             <button
               type="button"
               onClick={() => onSelectDay(null)}
-              className={`${btnBase} rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black text-violet-600 hover:bg-violet-100`}
+              className={`${btnBase} rounded-full border border-violet-200 bg-violet-50 px-3 py-2 text-[10px] font-black text-violet-600 hover:bg-violet-100`}
             >
               ← All Week
             </button>
@@ -166,7 +192,7 @@ export function PointsDailyChart({
                 {hasPts && (
                   <>
                     {i === peakIdx && totalPts.filter(p => p === maxPts).length === 1 && (
-                      <span className="text-[10px] leading-none">🔥</span>
+                      <Flame size={11} className="text-orange-500" fill="currentColor" />
                     )}
                     <span className={`text-[10px] font-black leading-none transition-colors ${
                       isSelected ? 'text-violet-700' : isToday ? 'text-amber-700' : 'text-slate-500'
@@ -179,9 +205,9 @@ export function PointsDailyChart({
 
               {/* Bar container */}
               <div
-                className={`w-full overflow-hidden rounded-lg transition-all duration-300 ${
+                className={`w-full overflow-hidden rounded-xl transition-all duration-300 ${
                   isSelected
-                    ? 'ring-2 ring-violet-500 ring-offset-1'
+                    ? 'shadow-md shadow-violet-500/30 ring-2 ring-violet-500 ring-offset-1'
                     : interactive && !isDimmed
                     ? 'group-hover:ring-1 group-hover:ring-slate-300'
                     : ''
@@ -192,7 +218,7 @@ export function PointsDailyChart({
                   {/* Empty placeholder */}
                   {!hasPts && (
                     <div
-                      className={`w-full rounded-lg ${isToday ? 'bg-violet-100' : 'bg-slate-100'}`}
+                      className={`w-full rounded-xl ${isToday ? 'bg-violet-100' : 'bg-slate-100'}`}
                       style={{ height: '6px' }}
                     />
                   )}

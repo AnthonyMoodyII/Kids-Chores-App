@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, Gift } from 'lucide-react';
+import { DollarSign, ShieldCheck, Trophy, RotateCcw, LogOut, Gift, Check, X } from 'lucide-react';
 import type {
   User, Chore, ChoreTemplate, PayoutRecord, CashPayment,
   RewardTemplate, RewardRedemption, RedemptionRequest, RewardRequest,
@@ -310,8 +310,8 @@ export function ParentView({
           {/* Pending use requests — kids asking to redeem a reward they already own */}
           {pendingUseCount > 0 && (
             <div className="rounded-3xl border-2 border-violet-300 bg-violet-50 p-5">
-              <p className="mb-3 text-xs font-black uppercase tracking-widest text-violet-700">
-                🎁 Reward Use Requests ({pendingUseCount})
+              <p className="mb-3 flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-violet-700">
+                <Gift size={13} /> Reward Use Requests ({pendingUseCount})
               </p>
               <div className="space-y-2">
                 {redemptions
@@ -333,14 +333,14 @@ export function ParentView({
                           onClick={() => onApproveRedemptionUse(r.id)}
                           className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black uppercase tracking-wide text-white`}
                         >
-                          ✅ Approve
+                          <Check size={13} /> Approve
                         </button>
                         <button
                           type="button"
                           onClick={() => onDenyRedemptionUse(r.id)}
                           className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase tracking-wide text-slate-500 hover:border-red-200 hover:text-red-600`}
                         >
-                          ❌ Deny
+                          <X size={13} /> Deny
                         </button>
                       </div>
                     </div>
@@ -426,16 +426,17 @@ export function ParentView({
                                 setPayoutInputAmount('');
                               }
                             }}
-                            className={`${btnBase} ${btnPress} rounded-lg bg-violet-600 px-2.5 py-1 text-[10px] font-black text-white disabled:opacity-40`}
+                            className={`${btnBase} ${btnPress} inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-2 text-[10px] font-black text-white disabled:opacity-40`}
                           >
-                            ✓ Pay
+                            <Check size={11} /> Pay
                           </button>
                           <button
                             type="button"
                             onClick={() => { setPayoutInputKidId(null); setPayoutInputAmount(''); }}
-                            className={`${btnBase} rounded-lg px-2 py-1 text-[10px] font-bold text-violet-400 hover:text-violet-700`}
+                            aria-label="Cancel payout"
+                            className={`${btnBase} flex h-11 w-11 items-center justify-center rounded-lg text-violet-400 hover:text-violet-700`}
                           >
-                            ✕
+                            <X size={13} />
                           </button>
                         </div>
                       ) : (
