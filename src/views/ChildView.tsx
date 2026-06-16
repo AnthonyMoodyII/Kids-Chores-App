@@ -11,6 +11,7 @@ import { PointsDailyChart } from '../components/PointsDailyChart';
 import { RewardsCatalog } from '../components/RewardsCatalog';
 import { SuggestRewardForm } from '../components/SuggestRewardForm';
 import { MissionBoard } from '../components/MissionBoard';
+import { Leaderboard } from '../components/Leaderboard';
 
 import { RewardInventory } from '../components/RewardInventory';
 
@@ -18,6 +19,7 @@ interface ChildViewProps {
   kids: User[];
   activeKidId: string;
   setActiveKidId: (id: string) => void;
+  pointBalances: Record<string, number>;
   selectedDay: DayOfWeek;
   setSelectedDay: (day: DayOfWeek) => void;
   weekLabel: string;
@@ -74,6 +76,7 @@ export function ChildView({
   kids,
   activeKidId,
   setActiveKidId,
+  pointBalances,
   selectedDay,
   setSelectedDay,
   weekLabel,
@@ -203,6 +206,14 @@ export function ChildView({
           </button>
         ))}
       </div>
+
+      {/* Leaderboard — points ranking across all kids */}
+      {kids.length > 1 && (
+        <Leaderboard
+          entries={kids.map(k => ({ id: k.id, name: k.name, points: pointBalances[k.id] ?? 0 }))}
+          highlightId={activeKidId}
+        />
+      )}
 
       {/* Progress overview card — weekly summary / day drill-down */}
       {activeKidId && activeKidStats.active.length > 0 && (
