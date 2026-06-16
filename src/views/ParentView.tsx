@@ -16,6 +16,7 @@ import { ParentLoginForm } from '../components/ParentLoginForm';
 import { ChangePasswordForm } from '../components/ChangePasswordForm';
 import { OAuthSettingsManager } from '../components/OAuthSettingsManager';
 import { PointsBadge } from '../components/PointsBadge';
+import { Leaderboard } from '../components/Leaderboard';
 import { PendingRewardRequests } from '../components/PendingRewardRequests';
 import { PendingRewardIdeas } from '../components/PendingRewardIdeas';
 import { RedeemRewardPanel } from '../components/RedeemRewardPanel';
@@ -283,6 +284,19 @@ export function ParentView({
               accent="from-violet-500 to-indigo-600"
             />
           </div>
+
+          {/* Leaderboard summary — points + earnings ranking across all kids */}
+          {leaderboard.length > 1 && (
+            <Leaderboard
+              entries={leaderboard.map(k => ({
+                id: k.id,
+                name: k.name,
+                points: pointBalances[k.id] ?? 0,
+                money: k.approved,
+              }))}
+              compact
+            />
+          )}
 
           {/* Pending reward requests (old buy-approval flow — kept for backward compat) */}
           {redemptionRequests.some(r => r.status === 'pending') && (

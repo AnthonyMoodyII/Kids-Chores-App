@@ -583,6 +583,7 @@ export default function ChoreApp() {
           <ChildView
             kids={kids}
             activeKidId={activeKidId}
+            pointBalances={pointBalances}
             setActiveKidId={id => {
               setActiveKidId(id);
               refreshSelections();
