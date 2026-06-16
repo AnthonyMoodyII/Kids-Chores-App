@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lightbulb, Send } from 'lucide-react';
+import { Lightbulb, Send, CheckCircle2 } from 'lucide-react';
 import { btnBase, btnPress } from '../lib/constants';
 
 interface SuggestRewardFormProps {
@@ -51,8 +51,8 @@ export function SuggestRewardForm({ kidId: _kidId, kidName: _kidName, onSubmit }
         <p className="font-black text-violet-800">Suggest a new reward</p>
       </div>
       {sent ? (
-        <p className="py-4 text-center text-sm font-bold text-emerald-600">
-          ✅ Idea sent to your parents!
+        <p className="flex items-center justify-center gap-1.5 py-4 text-center text-sm font-bold text-emerald-600">
+          <CheckCircle2 size={16} /> Idea sent to your parents!
         </p>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-3">

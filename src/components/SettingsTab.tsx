@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { KeyRound, Settings, Bell, ChevronDown, ChevronUp, ExternalLink, Eye, EyeOff, Check, Plus, Trash2, Send, Radio } from 'lucide-react';
+import { KeyRound, Settings, Bell, ChevronDown, ChevronUp, ExternalLink, Eye, EyeOff, Check, Plus, Trash2, Send, Radio, CheckCircle2, XCircle } from 'lucide-react';
 import { API_URL, btnBase, btnPress } from '../lib/constants';
 import { ChangePasswordForm } from './ChangePasswordForm';
 import { OAuthSettingsManager } from './OAuthSettingsManager';
@@ -13,6 +13,17 @@ const EMPTY_NS: NotificationSettings = {
   notifyRewardRequest: true, notifyRewardIdea: true,
   notifyWeeklyReset: true, notifyRewardApproved: true,
 };
+
+/** Test-result strings still use a ✅/❌ prefix internally to encode success/failure; strip it for display. */
+function TestStatus({ msg }: { msg: string }) {
+  const ok = msg.startsWith('✅');
+  const text = msg.replace(/^[✅❌]\s*/, '');
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-bold ${ok ? 'text-emerald-600' : 'text-red-600'}`}>
+      {ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />} {text}
+    </span>
+  );
+}
 
 function AccordionSection({ title, icon, children, defaultOpen = false }: {
   title: string; icon: React.ReactNode; children: React.ReactNode; defaultOpen?: boolean;
@@ -219,11 +230,7 @@ function NotificationProvidersPanel({ currentPassword }: { currentPassword: stri
             >
               <Trash2 size={12} /> {deleting === p.id ? 'Removing…' : 'Remove'}
             </button>
-            {testResults[p.id] && (
-              <span className={`text-xs font-bold ${testResults[p.id].startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>
-                {testResults[p.id]}
-              </span>
-            )}
+            {testResults[p.id] && <TestStatus msg={testResults[p.id]} />}
           </div>
         </div>
       ))}
@@ -286,9 +293,9 @@ function NotificationProvidersPanel({ currentPassword }: { currentPassword: stri
             <button
               type="submit"
               disabled={addSaving}
-              className={`${btnBase} ${btnPress} rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-indigo-500/25 disabled:opacity-50`}
+              className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-indigo-500/25 disabled:opacity-50`}
             >
-              {addSaving ? 'Saving…' : '✓ Add Provider'}
+              {addSaving ? 'Saving…' : <><Check size={14} /> Add Provider</>}
             </button>
             <button
               type="button"
@@ -536,7 +543,7 @@ export function SettingsTab({
             >
               {poTesting ? 'Sending…' : 'Send Test Notification'}
             </button>
-            {poTestMsg && <p className={`text-sm font-bold ${poTestMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>{poTestMsg}</p>}
+            {poTestMsg && <p className="text-sm"><TestStatus msg={poTestMsg} /></p>}
           </div>
 
           {/* SMTP */}
@@ -580,7 +587,7 @@ export function SettingsTab({
             >
               {smtpTesting ? 'Sending…' : 'Send Test Email'}
             </button>
-            {smtpTestMsg && <p className={`text-sm font-bold ${smtpTestMsg.startsWith('✅') ? 'text-emerald-600' : 'text-red-600'}`}>{smtpTestMsg}</p>}
+            {smtpTestMsg && <p className="text-sm"><TestStatus msg={smtpTestMsg} /></p>}
           </div>
 
           {/* Event toggles */}

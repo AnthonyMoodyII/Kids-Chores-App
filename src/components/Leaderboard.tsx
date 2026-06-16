@@ -1,3 +1,4 @@
+import { Trophy, Crown, Star } from 'lucide-react';
 import { cardSurface, fmtPts } from '../lib/constants';
 
 export interface LeaderboardEntry {
@@ -14,7 +15,7 @@ interface LeaderboardProps {
   compact?: boolean;
 }
 
-const RANK_MEDALS = ['🥇', '🥈', '🥉'];
+const RANK_MEDAL_COLORS = ['text-amber-500', 'text-slate-400', 'text-orange-400'];
 
 const RANK_RING = [
   'ring-2 ring-amber-400',
@@ -47,8 +48,11 @@ export function Leaderboard({ entries, highlightId, title = 'Leaderboard', compa
       <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-amber-200/30 blur-2xl" />
       <div className="pointer-events-none absolute -bottom-10 -left-10 h-28 w-28 rounded-full bg-violet-200/30 blur-2xl" />
 
-      <h3 className="relative mb-3 flex items-center gap-1.5 text-base font-black text-black">
-        <span className="text-lg">🏆</span> {title}
+      <h3 className="relative mb-3 flex items-center gap-2 text-base font-black text-black">
+        <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm shadow-amber-500/30">
+          <Trophy size={15} strokeWidth={2.5} />
+        </span>
+        {title}
       </h3>
 
       <div className="relative space-y-2">
@@ -64,6 +68,8 @@ export function Leaderboard({ entries, highlightId, title = 'Leaderboard', compa
               className={`relative overflow-hidden rounded-2xl px-3 py-2.5 transition-all ${
                 isActive
                   ? 'border border-violet-300 bg-violet-50 shadow-sm'
+                  : i === 0
+                  ? 'border border-amber-200 bg-gradient-to-r from-amber-50/80 via-white to-white shadow-sm shadow-amber-200/50'
                   : isTop3
                   ? 'border border-slate-100 bg-white shadow-sm'
                   : 'border border-slate-100 bg-slate-50'
@@ -71,8 +77,10 @@ export function Leaderboard({ entries, highlightId, title = 'Leaderboard', compa
             >
               <div className="flex items-center gap-3">
                 {/* Rank badge / medal */}
-                <span className="relative w-6 shrink-0 text-center text-lg">
-                  {RANK_MEDALS[i] ?? (
+                <span className="relative flex w-6 shrink-0 items-center justify-center">
+                  {isTop3 ? (
+                    <Trophy size={16} strokeWidth={2.5} className={RANK_MEDAL_COLORS[i]} />
+                  ) : (
                     <span className="text-xs font-black text-slate-400">#{i + 1}</span>
                   )}
                 </span>
@@ -87,7 +95,12 @@ export function Leaderboard({ entries, highlightId, title = 'Leaderboard', compa
                     {initial}
                   </div>
                   {i === 0 && (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-sm">👑</span>
+                    <Crown
+                      size={14}
+                      strokeWidth={2.5}
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-amber-500"
+                      fill="currentColor"
+                    />
                   )}
                 </div>
 
@@ -111,8 +124,8 @@ export function Leaderboard({ entries, highlightId, title = 'Leaderboard', compa
                   {entry.money !== undefined && (
                     <span className="text-[11px] font-black text-emerald-600">${entry.money.toFixed(2)}</span>
                   )}
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">
-                    ⭐ {fmtPts(entry.points)}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">
+                    <Star size={11} strokeWidth={2.5} fill="currentColor" /> {fmtPts(entry.points)}
                   </span>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Upload, Search } from 'lucide-react';
 import { btnBase, btnPress } from '../lib/constants';
 
 const EMOJI_OPTIONS = [
@@ -151,7 +152,7 @@ export function IconPickerDropdown({
             onClick={ev => { ev.stopPropagation(); fileInputRef.current?.click(); }}
             className={`${btnBase} ${btnPress} flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 ${ac.uploadHover}`}
           >
-            📁 Upload PNG / image file
+            <Upload size={13} /> Upload PNG / image file
           </button>
         </div>
 
@@ -163,7 +164,7 @@ export function IconPickerDropdown({
           className={`mt-2 flex items-center gap-1 text-xs font-bold ${ac.linkColor}`}
           onClick={onClose}
         >
-          🔍 Browse more icons at Magnific →
+          <Search size={12} /> Browse more icons at Magnific →
         </a>
       </div>
     </>

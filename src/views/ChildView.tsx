@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, Wallet, PiggyBank, Star, Sparkles, PartyPopper, Target, Gift } from 'lucide-react';
 import { DollarSign, ArrowRightLeft } from 'lucide-react';
 import type { User, DayOfWeek, ChoreTemplate, DailyChoreSelection, RewardTemplate, RewardRedemption, PointLedgerEntry, PayoutRecord, CashPayment } from '../types';
 import type { KidStats } from '../hooks/useChores';
@@ -232,7 +232,7 @@ export function ChildView({
               {/* Money balance chips — always visible */}
               {weekMandatoryMoney + weekOptionalMoney > 0 && (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                  💵 ${(weekMandatoryMoney + weekOptionalMoney).toFixed(2)} this week
+                  <Wallet size={13} /> ${(weekMandatoryMoney + weekOptionalMoney).toFixed(2)} this week
                   <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-500">
                     = {fmtPts((weekMandatoryMoney + weekOptionalMoney) * 100)} pts
                   </span>
@@ -248,7 +248,7 @@ export function ChildView({
                   className={`${btnBase} ${btnPress} inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1 text-xs font-black text-white shadow-sm hover:bg-emerald-700`}
                   title="Tap to convert to points"
                 >
-                  💰 ${moneyOwed.toFixed(2)} banked
+                  <PiggyBank size={13} /> ${moneyOwed.toFixed(2)} banked
                   <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[9px] font-bold">
                     = {fmtPts(moneyOwed * 100)} pts
                   </span>
@@ -257,8 +257,8 @@ export function ChildView({
               {/* Day drill-down controls */}
               {progressDay && (
                 <>
-                  <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700">
-                    ⭐ {fmtPts(dayTotalPts)} pts {progressDay}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-3 py-1 text-xs font-black text-violet-700">
+                    <Star size={12} fill="currentColor" /> {fmtPts(dayTotalPts)} pts {progressDay}
                   </span>
                   <button
                     type="button"
@@ -285,8 +285,8 @@ export function ChildView({
             <div className="mt-5 space-y-4">
               {dayMandatoryDone.length > 0 && (
                 <div>
-                  <p className="mb-2 text-xs font-black uppercase tracking-wider text-emerald-600">
-                    ✅ Completed ({dayMandatoryDone.length})
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-emerald-600">
+                    <CheckCircle2 size={13} /> Completed ({dayMandatoryDone.length})
                   </p>
                   <div className="space-y-2">
                     {dayMandatoryDone.map(c => (
@@ -301,8 +301,8 @@ export function ChildView({
               )}
               {dayOptionalPicks.some(s => s.completions > 0) && (
                 <div>
-                  <p className="mb-2 text-xs font-black uppercase tracking-wider text-violet-600">
-                    🎯 Bonus Picks
+                  <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-violet-600">
+                    <Target size={13} /> Bonus Picks
                   </p>
                   <div className="space-y-2">
                     {dayOptionalPicks.filter(s => s.completions > 0).map(s => (
@@ -411,10 +411,14 @@ export function ChildView({
       {activeKidId && activeRewards.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-2.5 px-1">
-            <span className="text-2xl">🎁</span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-sm shadow-violet-500/30">
+              <Gift size={19} strokeWidth={2.25} />
+            </span>
             <div>
               <h3 className="text-xl font-black text-slate-900">Rewards</h3>
-              <p className="text-sm text-slate-500">Tap ✨ to save a goal. Tap <strong>Buy Now</strong> to spend your points!</p>
+              <p className="flex items-center gap-1 text-sm text-slate-500">
+                Tap <Sparkles size={13} className="text-violet-400" /> to save a goal. Tap <strong>Buy Now</strong> to spend your points!
+              </p>
             </div>
           </div>
           <RewardsCatalog
@@ -446,8 +450,9 @@ export function ChildView({
 
       {/* Nudge banner when they can afford something */}
       {cheapestAffordable && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm font-bold text-emerald-700">
-          🎉 You have enough for <strong>{cheapestAffordable.title}</strong>! Tap Buy Now to get it!
+        <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center text-sm font-bold text-emerald-700">
+          <PartyPopper size={16} className="shrink-0" />
+          You have enough for <strong>{cheapestAffordable.title}</strong>! Tap Buy Now to get it!
         </div>
       )}
 
@@ -459,8 +464,8 @@ export function ChildView({
               <DollarSign size={18} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-black text-emerald-800">
-                💵 ${moneyOwed.toFixed(2)} owed to you
+              <p className="flex items-center gap-1.5 text-sm font-black text-emerald-800">
+                <Wallet size={14} /> ${moneyOwed.toFixed(2)} owed to you
               </p>
               <p className="text-xs text-emerald-600">Convert your cash into points to spend on rewards!</p>
             </div>
@@ -498,10 +503,12 @@ export function ChildView({
           {/* Conversion summary + confirm */}
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm font-black text-emerald-800">
-              <span className="text-lg">💵</span>
+              <DollarSign size={16} className="text-emerald-500" />
               <span>${convertAmount.toFixed(2)}</span>
               <ArrowRightLeft size={14} className="text-emerald-500" />
-              <span className="text-amber-600">⭐ {convertPoints} pts</span>
+              <span className="inline-flex items-center gap-1 text-amber-600">
+                <Star size={12} fill="currentColor" /> {convertPoints} pts
+              </span>
               <span className="text-xs font-bold text-emerald-500">($0.50 = 50 pts)</span>
             </div>
             <button
@@ -514,7 +521,9 @@ export function ChildView({
                   : 'bg-gradient-to-r from-emerald-500 to-teal-500 shadow-emerald-500/30'
               }`}
             >
-              {convertSuccess ? '✅ Converted!' : converting ? 'Converting…' : `Convert to ${convertPoints} pts`}
+              {convertSuccess ? (
+                <span className="flex items-center gap-1.5"><CheckCircle2 size={15} /> Converted!</span>
+              ) : converting ? 'Converting…' : `Convert to ${convertPoints} pts`}
             </button>
           </div>
         </div>

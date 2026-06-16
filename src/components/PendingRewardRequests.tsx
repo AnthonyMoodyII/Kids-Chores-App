@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react';
+import { Check, X, Gift } from 'lucide-react';
 import type { RedemptionRequest } from '../types';
 import { btnBase, btnPress } from '../lib/constants';
 
@@ -14,8 +14,8 @@ export function PendingRewardRequests({ requests, onApprove, onReject }: Pending
 
   return (
     <div className="rounded-3xl border-2 border-amber-300 bg-amber-50 p-5">
-      <p className="mb-3 text-xs font-black uppercase tracking-widest text-amber-700">
-        🎁 Reward Requests ({pending.length})
+      <p className="mb-3 flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-amber-700">
+        <Gift size={13} /> Reward Requests ({pending.length})
       </p>
       <div className="space-y-2">
         {pending.map(req => (

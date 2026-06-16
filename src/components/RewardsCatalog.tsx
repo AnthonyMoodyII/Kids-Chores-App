@@ -80,14 +80,17 @@ export function RewardsCatalog({
               <button
                 type="button"
                 onClick={() => onToggleGoal(reward.id)}
-                className={`${btnBase} absolute right-3 top-3 rounded-full p-1.5 text-xs transition-colors ${
+                aria-label={isGoal ? 'Remove from goals' : 'Add to goals'}
+                className={`${btnBase} absolute -right-1 -top-1 flex h-11 w-11 items-center justify-center rounded-full text-xs transition-colors ${
                   isGoal
-                    ? 'bg-violet-100 text-violet-600'
+                    ? 'text-violet-600'
                     : 'text-slate-300 hover:text-violet-400'
                 }`}
                 title={isGoal ? 'Remove from goals' : 'Add to goals'}
               >
-                <Sparkles size={14} />
+                <span className={`flex h-7 w-7 items-center justify-center rounded-full ${isGoal ? 'bg-violet-100' : ''}`}>
+                  <Sparkles size={14} />
+                </span>
               </button>
 
               {renderRewardIcon(reward.icon)}

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { CheckCircle2, Circle, Plus, X, Search } from 'lucide-react';
+import { CheckCircle2, Circle, Plus, X, Search, ClipboardList, Target, Star, DollarSign, Pin, Repeat } from 'lucide-react';
 import type { Chore, ChoreTemplate, DailyChoreSelection, DayOfWeek } from '../types';
 import { DAYS, btnBase, btnPress, cardSurface, fmtPts } from '../lib/constants';
 import { getChoreEarnedAmount } from '../lib/earnings';
@@ -148,7 +148,7 @@ export function MissionBoard({
             key={day}
             type="button"
             onClick={() => onSelectDay(day)}
-            className={`${btnBase} ${btnPress} shrink-0 flex-1 rounded-xl border px-2 py-2 text-[11px] font-semibold tracking-tight transition-all ${
+            className={`${btnBase} ${btnPress} flex min-h-11 shrink-0 flex-1 items-center justify-center rounded-xl border px-2 text-[11px] font-semibold tracking-tight transition-all ${
               selectedDay === day
                 ? 'border-violet-400/40 bg-violet-600 text-white shadow-sm shadow-violet-500/25'
                 : 'border-slate-200 bg-white text-slate-400 hover:border-violet-200 hover:text-slate-600'
@@ -160,9 +160,16 @@ export function MissionBoard({
       </div>
 
       {errorMsg && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-600">
+        <div className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-600">
           {errorMsg}
-          <button type="button" onClick={() => setErrorMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            aria-label="Dismiss error"
+            className="-m-2.5 flex h-11 w-11 shrink-0 items-center justify-center opacity-60 hover:opacity-100"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -172,11 +179,14 @@ export function MissionBoard({
         <div className={`${cardSurface} p-5`}>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-base font-bold text-slate-700">
-              <span className="text-lg">📋</span> {activeKidName}'s Chores
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm shadow-violet-500/30">
+                <ClipboardList size={15} strokeWidth={2.5} />
+              </span>
+              {activeKidName}'s Chores
             </h3>
             {dayPoints > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-700">
-                ⭐ +{fmtPts(dayPoints)} pts {selectedDay.slice(0, 3)}
+                <Star size={11} strokeWidth={2.5} fill="currentColor" /> +{fmtPts(dayPoints)} pts {selectedDay.slice(0, 3)}
               </span>
             )}
           </div>
@@ -214,9 +224,13 @@ export function MissionBoard({
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-                        <span>⭐ +{fmtPts(ptsPerDay)} pts/day</span>
-                        <span>💵 ${earned.toFixed(2)} earned</span>
+                      <p className="mt-0.5 flex items-center gap-3 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1">
+                          <Star size={11} className="text-amber-500" fill="currentColor" /> +{fmtPts(ptsPerDay)} pts/day
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <DollarSign size={11} className="text-emerald-500" /> {earned.toFixed(2)} earned
+                        </span>
                       </p>
                       <div className="mt-1.5 flex gap-0.5">
                         {[...Array(7)].map((_, i) => (
@@ -240,8 +254,8 @@ export function MissionBoard({
           {/* Optional picks for today — same checkbox style as mandatory */}
           {todayPicks.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-slate-400">
-                📌 My picks today
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                <Pin size={12} /> My picks today
               </p>
               {todayPicks.map(s => {
                 const isDone = s.completions > 0;
@@ -283,10 +297,15 @@ export function MissionBoard({
                           <span className="ml-1.5 font-black text-amber-600">×{s.completions}</span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        ⭐ +{fmtPts(ptsPerDay)} pts · 💵 ${(s.baseValue / 5).toFixed(2)}/completion
+                      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                        <span className="inline-flex items-center gap-1">
+                          <Star size={11} className="text-amber-500" fill="currentColor" /> +{fmtPts(ptsPerDay)} pts
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <DollarSign size={11} className="text-emerald-500" /> {(s.baseValue / 5).toFixed(2)}/completion
+                        </span>
                         {globalMax > 1 && (
-                          <span className="ml-1 font-bold text-violet-500">
+                          <span className="font-bold text-violet-500">
                             · {globalDone}/{globalMax} done today
                           </span>
                         )}
@@ -299,10 +318,11 @@ export function MissionBoard({
                         type="button"
                         disabled={isUnpicking}
                         onClick={() => handleUnpick(s.id)}
-                        className={`${btnBase} shrink-0 rounded-lg border border-slate-200 p-1.5 text-slate-300 hover:border-red-200 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40`}
+                        aria-label="Remove from my list"
                         title="Remove from my list"
+                        className={`${btnBase} flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-300 hover:border-red-200 hover:text-red-400 disabled:pointer-events-none disabled:opacity-40`}
                       >
-                        <X size={13} />
+                        <X size={15} />
                       </button>
                     )}
                   </div>
@@ -322,7 +342,10 @@ export function MissionBoard({
         <div className={`${cardSurface} p-5`}>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-base font-bold text-slate-700">
-              <span className="text-lg">🎯</span> Available Missions
+              <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-500/30">
+                <Target size={15} strokeWidth={2.5} />
+              </span>
+              Available Missions
             </h3>
             {available.length > 0 && (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-500">
@@ -333,8 +356,8 @@ export function MissionBoard({
 
           {available.length === 0 ? (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-6 text-center">
-              <p className="text-2xl">✅</p>
-              <p className="mt-1 text-sm font-bold text-emerald-700">
+              <CheckCircle2 size={28} className="mx-auto text-emerald-500" />
+              <p className="mt-2 text-sm font-bold text-emerald-700">
                 All available missions are done for today!
               </p>
             </div>
@@ -351,18 +374,23 @@ export function MissionBoard({
                   className="flex-1 bg-transparent text-xs font-bold text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400"
                 />
                 {missionSearch && (
-                  <button type="button" onClick={() => setMissionSearch('')} className="shrink-0 text-slate-300 hover:text-slate-500">
-                    <X size={12} />
+                  <button
+                    type="button"
+                    onClick={() => setMissionSearch('')}
+                    aria-label="Clear search"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center text-slate-300 hover:text-slate-500"
+                  >
+                    <X size={14} />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setMissionSort(s => s === 'pts' ? 'az' : 'pts')}
-                  className={`${btnBase} shrink-0 rounded-xl border border-slate-200 bg-white px-2 py-1 text-[10px] font-black transition-colors hover:border-violet-300 hover:text-violet-600 ${
+                  className={`${btnBase} inline-flex shrink-0 items-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-2.5 text-[10px] font-black transition-colors hover:border-violet-300 hover:text-violet-600 ${
                     missionSort === 'pts' ? 'text-amber-600' : 'text-slate-500'
                   }`}
                 >
-                  {missionSort === 'pts' ? '⭐ Pts' : 'A–Z'}
+                  {missionSort === 'pts' ? <><Star size={10} fill="currentColor" /> Pts</> : 'A–Z'}
                 </button>
               </div>
 
@@ -386,16 +414,20 @@ export function MissionBoard({
                         <div className="flex items-start gap-2">
                           {t.icon
                             ? renderIcon(t.icon)
-                            : <span className="shrink-0 text-xl leading-none">📋</span>
+                            : <ClipboardList size={20} className="shrink-0 text-slate-400" />
                           }
                           <p className="flex-1 break-words text-xs font-bold leading-tight text-slate-800">{t.title}</p>
                         </div>
                         {/* Pts + repeat badge + Pick button */}
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[10px] font-black text-amber-600">⭐ +{fmtPts(pts)} pts</span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-600">
+                              <Star size={9} fill="currentColor" /> +{fmtPts(pts)} pts
+                            </span>
                             {globalMax > 1 && (
-                              <span className="text-[9px] font-bold text-violet-500">🔁 {remaining}/{globalMax} left</span>
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-violet-500">
+                                <Repeat size={9} /> {remaining}/{globalMax} left
+                              </span>
                             )}
                           </div>
                           <button
