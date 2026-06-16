@@ -207,17 +207,22 @@ export function ChildView({
         ))}
       </div>
 
+      {/* Leaderboard + progress overview — same row, 1/4 + 3/4 split on large screens */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
       {/* Leaderboard — points ranking across all kids */}
       {kids.length > 1 && (
-        <Leaderboard
-          entries={kids.map(k => ({ id: k.id, name: k.name, points: pointBalances[k.id] ?? 0 }))}
-          highlightId={activeKidId}
-        />
+        <div className="lg:col-span-1">
+          <Leaderboard
+            entries={kids.map(k => ({ id: k.id, name: k.name, points: pointBalances[k.id] ?? 0 }))}
+            highlightId={activeKidId}
+            compact
+          />
+        </div>
       )}
 
       {/* Progress overview card — weekly summary / day drill-down */}
       {activeKidId && activeKidStats.active.length > 0 && (
-        <div className={`${cardSurface} p-5`}>
+        <div className={`${cardSurface} p-5 ${kids.length > 1 ? 'lg:col-span-3' : 'lg:col-span-4'}`}>
           {/* Header */}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-base font-black text-black">
@@ -375,6 +380,7 @@ export function ChildView({
           )}
         </div>
       )}
+      </div>
 
       {/* Mission Board — day tabs + two-column chore board */}
       <MissionBoard
